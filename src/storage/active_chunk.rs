@@ -164,7 +164,11 @@ impl ActiveChunk {
     pub fn append(&self, point: DataPoint) -> Result<(), String> {
         // Check if sealed (lock-free check)
         if self.sealed.load(Ordering::Acquire) {
-            return Err("Cannot append to sealed chunk".to_string());
+            return Err(format!(
+                "Cannot append to sealed chunk. Series ID: {}, timestamp: {}. \
+                 Sealed chunks are immutable - create a new chunk for additional data.",
+                self.series_id, point.timestamp
+            ));
         }
 
         // Validate series ID
@@ -194,16 +198,47 @@ impl ActiveChunk {
             // Update atomic counter
             self.point_count.store(points.len() as u32, Ordering::Release);
 
-            // P0.4: Update cached min/max timestamps for lock-free access in should_seal()
-            // Use relaxed ordering since these are only hints for optimization
-            let current_min = self.min_timestamp.load(Ordering::Relaxed);
-            if point.timestamp < current_min {
-                self.min_timestamp.store(point.timestamp, Ordering::Relaxed);
+            // P1.5: Update cached min/max timestamps using compare-and-swap loop
+            // This prevents race conditions where concurrent updates could set incorrect values
+            // Example race without CAS:
+            //   Thread A: load(100), set to 50
+            //   Thread B: load(100), set to 25
+            //   Thread A: store(50) <- overwrites B's correct value of 25!
+
+            // Update minimum timestamp atomically
+            loop {
+                let current_min = self.min_timestamp.load(Ordering::Acquire);
+                if point.timestamp >= current_min {
+                    break;  // No update needed
+                }
+
+                match self.min_timestamp.compare_exchange_weak(
+                    current_min,
+                    point.timestamp,
+                    Ordering::Release,
+                    Ordering::Acquire
+                ) {
+                    Ok(_) => break,      // Successfully updated
+                    Err(_) => continue,  // Another thread updated, retry
+                }
             }
 
-            let current_max = self.max_timestamp.load(Ordering::Relaxed);
-            if point.timestamp > current_max {
-                self.max_timestamp.store(point.timestamp, Ordering::Relaxed);
+            // Update maximum timestamp atomically
+            loop {
+                let current_max = self.max_timestamp.load(Ordering::Acquire);
+                if point.timestamp <= current_max {
+                    break;  // No update needed
+                }
+
+                match self.max_timestamp.compare_exchange_weak(
+                    current_max,
+                    point.timestamp,
+                    Ordering::Release,
+                    Ordering::Acquire
+                ) {
+                    Ok(_) => break,      // Successfully updated
+                    Err(_) => continue,  // Another thread updated, retry
+                }
             }
         }
 
@@ -313,7 +348,11 @@ impl ActiveChunk {
     pub async fn seal(&self, path: PathBuf) -> Result<Chunk, String> {
         // Try to mark as sealed
         if self.sealed.swap(true, Ordering::AcqRel) {
-            return Err("Chunk already sealed".to_string());
+            return Err(format!(
+                "Cannot seal chunk: already sealed. Series ID: {}, point count: {}. \
+                 This may indicate a race condition where multiple threads tried to seal the same chunk.",
+                self.series_id, self.point_count.load(Ordering::Acquire)
+            ));
         }
 
         // P1.1: ZERO-COPY - Take ownership of BTreeMap without cloning
@@ -329,7 +368,11 @@ impl ActiveChunk {
             if points.is_empty() {
                 // Restore sealed flag on error
                 self.sealed.store(false, Ordering::Release);
-                return Err("Cannot seal empty chunk".to_string());
+                return Err(format!(
+                    "Cannot seal empty chunk. Series ID: {}. \
+                     Append at least one data point before sealing.",
+                    self.series_id
+                ));
             }
 
             // Take ownership, replace with empty BTreeMap (zero-copy move)

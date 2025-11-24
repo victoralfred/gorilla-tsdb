@@ -108,10 +108,18 @@ impl ChunkHeader {
             return Err(format!("Unsupported version: {}", self.version));
         }
         if self.point_count == 0 {
-            return Err("Empty chunk".to_string());
+            return Err(format!(
+                "Invalid chunk header: point_count is 0. Chunks must contain at least one data point. \
+                 Series ID: {}",
+                self.series_id
+            ));
         }
         if self.start_timestamp > self.end_timestamp {
-            return Err("Invalid time range".to_string());
+            return Err(format!(
+                "Invalid chunk header: start_timestamp ({}) > end_timestamp ({}). \
+                 Time range is inverted. Series ID: {}",
+                self.start_timestamp, self.end_timestamp, self.series_id
+            ));
         }
         Ok(())
     }
@@ -519,6 +527,19 @@ impl Chunk {
             return Err("Cannot create chunk from empty data".to_string());
         }
 
+        // P1.7: Validate all points belong to the same series
+        // This prevents data corruption from mixed series in a single chunk
+        for (timestamp, point) in points.iter() {
+            if point.series_id != series_id {
+                return Err(format!(
+                    "Data integrity violation: Point at timestamp {} has series_id {} \
+                     but chunk expects series_id {}. All points in a chunk must belong \
+                     to the same series.",
+                    timestamp, point.series_id, series_id
+                ));
+            }
+        }
+
         let point_count = points.len() as u32;
         let start_timestamp = *points.keys().next().unwrap();
         let end_timestamp = *points.keys().next_back().unwrap();
@@ -729,22 +750,34 @@ impl Chunk {
         use tokio::io::AsyncWriteExt;
 
         if !self.is_active() {
-            return Err(format!("Cannot seal {:?} chunk", self.state));
+            return Err(format!(
+                "Cannot seal chunk in {:?} state. Series ID: {}, path: {:?}. \
+                 Only Active chunks can be sealed. Sealed chunks are already on disk.",
+                self.state, self.metadata.series_id, self.metadata.path
+            ));
         }
 
-        // P0.3: ZERO-COPY - Take ownership without cloning
-        let points = if let ChunkData::InMemory(ref mut points_map) = self.data {
-            // Take ownership of BTreeMap, replace with empty
-            let map = std::mem::take(points_map);
-
-            if map.is_empty() {
-                return Err("Cannot seal empty chunk".to_string());
+        // P1.6: Clone data for compression, keep original for retry on failure
+        // This prevents data loss if seal fails (e.g., disk full, compression error)
+        // We only clear the original data after successful seal
+        let points = if let ChunkData::InMemory(ref points_map) = self.data {
+            if points_map.is_empty() {
+                return Err(format!(
+                    "Cannot seal empty chunk. Series ID: {}, chunk ID: {}. \
+                     Append at least one data point before sealing.",
+                    self.metadata.series_id, self.metadata.chunk_id
+                ));
             }
 
-            // Convert BTreeMap to Vec (already sorted by timestamp)
-            map.into_iter().map(|(_, v)| v).collect::<Vec<_>>()
+            // Clone to Vec for compression
+            // Note: This is a temporary copy that will be freed after compression
+            points_map.values().cloned().collect::<Vec<_>>()
         } else {
-            return Err("Invalid state: Active chunk without in-memory data".to_string());
+            return Err(format!(
+                "Invalid state: Active chunk without in-memory data. Series ID: {}, chunk ID: {}. \
+                 This indicates internal corruption - the chunk state is Active but data is not in memory.",
+                self.metadata.series_id, self.metadata.chunk_id
+            ));
         };
 
         // Create parent directory if needed
@@ -800,6 +833,12 @@ impl Chunk {
         self.metadata.compression = CompressionType::Gorilla;
         self.metadata.size_bytes = (64 + compressed.compressed_size) as u64;
         self.state = ChunkState::Sealed;
+
+        // P1.6: Now that seal succeeded, clear in-memory data and update to OnDisk
+        // If we had failed earlier, the data would still be in memory for retry
+        if let ChunkData::InMemory(ref mut points_map) = self.data {
+            points_map.clear();  // Free memory now that data is safely on disk
+        }
         self.data = ChunkData::OnDisk(path);
 
         Ok(())
@@ -936,13 +975,21 @@ impl Chunk {
         use tokio::io::AsyncReadExt;
 
         if !self.is_sealed() {
-            return Err(format!("Cannot decompress {:?} chunk", self.state));
+            return Err(format!(
+                "Cannot decompress chunk in {:?} state. Series ID: {}, chunk ID: {}. \
+                 Only Sealed chunks can be decompressed. Active chunks have data in memory already.",
+                self.state, self.metadata.series_id, self.metadata.chunk_id
+            ));
         }
 
         let path = if let ChunkData::OnDisk(ref path) = self.data {
             path
         } else {
-            return Err("Invalid state: Sealed chunk without disk path".to_string());
+            return Err(format!(
+                "Invalid state: Sealed chunk without disk path. Series ID: {}, chunk ID: {}. \
+                 This indicates internal corruption - the chunk is marked Sealed but has no file path.",
+                self.metadata.series_id, self.metadata.chunk_id
+            ));
         };
 
         // P2.2: Use cached header if available, otherwise read from disk
