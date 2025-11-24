@@ -16,8 +16,14 @@ pub mod compression;
 pub mod storage;
 pub mod index;
 pub mod error;
+
+/// Prometheus metrics and telemetry
 pub mod metrics;
+
+/// Configuration management with TOML support
 pub mod config;
+
+/// Security hardening (path validation, rate limiting)
 pub mod security;
 
 // Re-export main types

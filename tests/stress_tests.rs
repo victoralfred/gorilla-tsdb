@@ -173,7 +173,7 @@ async fn test_memory_stability() {
     let mut timestamp = 0i64;
 
     while Instant::now() < end_time {
-        let config = SealConfig {
+        let _config = SealConfig {
             max_points: 10_000,
             max_duration_ms: (SEAL_INTERVAL_SECS * 1000) as i64,
             max_size_bytes: 10 * 1024 * 1024,
