@@ -123,6 +123,134 @@ impl ChunkHeader {
         }
         self.uncompressed_size as f64 / self.compressed_size as f64
     }
+
+    /// Serialize header to bytes (64 bytes total)
+    ///
+    /// Binary layout:
+    /// ```text
+    /// [0-3]   magic (u32)
+    /// [4-5]   version (u16)
+    /// [6-21]  series_id (u128)
+    /// [22-29] start_timestamp (i64)
+    /// [30-37] end_timestamp (i64)
+    /// [38-41] point_count (u32)
+    /// [42-45] compressed_size (u32)
+    /// [46-49] uncompressed_size (u32)
+    /// [50-57] checksum (u64)
+    /// [58]    compression_type (u8)
+    /// [59]    flags (u8)
+    /// [60-63] reserved (4 bytes, all zeros)
+    /// ```
+    pub fn to_bytes(&self) -> [u8; 64] {
+        let mut bytes = [0u8; 64];
+
+        // Magic number (4 bytes)
+        bytes[0..4].copy_from_slice(&self.magic.to_le_bytes());
+
+        // Version (2 bytes)
+        bytes[4..6].copy_from_slice(&self.version.to_le_bytes());
+
+        // Series ID (16 bytes)
+        bytes[6..22].copy_from_slice(&self.series_id.to_le_bytes());
+
+        // Timestamps (8 bytes each)
+        bytes[22..30].copy_from_slice(&self.start_timestamp.to_le_bytes());
+        bytes[30..38].copy_from_slice(&self.end_timestamp.to_le_bytes());
+
+        // Counts and sizes (4 bytes each)
+        bytes[38..42].copy_from_slice(&self.point_count.to_le_bytes());
+        bytes[42..46].copy_from_slice(&self.compressed_size.to_le_bytes());
+        bytes[46..50].copy_from_slice(&self.uncompressed_size.to_le_bytes());
+
+        // Checksum (8 bytes)
+        bytes[50..58].copy_from_slice(&self.checksum.to_le_bytes());
+
+        // Compression type (1 byte)
+        bytes[58] = self.compression_type as u8;
+
+        // Flags (1 byte)
+        bytes[59] = self.flags.0;
+
+        // Reserved (4 bytes) - already zeroed
+
+        bytes
+    }
+
+    /// Deserialize header from bytes
+    ///
+    /// # Arguments
+    ///
+    /// * `bytes` - 64-byte array containing serialized header
+    ///
+    /// # Returns
+    ///
+    /// Parsed ChunkHeader or error if invalid
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() < 64 {
+            return Err(format!("Invalid header size: {} bytes (expected 64)", bytes.len()));
+        }
+
+        // Parse magic number
+        let magic = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+
+        // Parse version
+        let version = u16::from_le_bytes([bytes[4], bytes[5]]);
+
+        // Parse series ID (16 bytes)
+        let series_id = u128::from_le_bytes([
+            bytes[6], bytes[7], bytes[8], bytes[9],
+            bytes[10], bytes[11], bytes[12], bytes[13],
+            bytes[14], bytes[15], bytes[16], bytes[17],
+            bytes[18], bytes[19], bytes[20], bytes[21],
+        ]);
+
+        // Parse timestamps
+        let start_timestamp = i64::from_le_bytes([
+            bytes[22], bytes[23], bytes[24], bytes[25],
+            bytes[26], bytes[27], bytes[28], bytes[29],
+        ]);
+        let end_timestamp = i64::from_le_bytes([
+            bytes[30], bytes[31], bytes[32], bytes[33],
+            bytes[34], bytes[35], bytes[36], bytes[37],
+        ]);
+
+        // Parse counts and sizes
+        let point_count = u32::from_le_bytes([bytes[38], bytes[39], bytes[40], bytes[41]]);
+        let compressed_size = u32::from_le_bytes([bytes[42], bytes[43], bytes[44], bytes[45]]);
+        let uncompressed_size = u32::from_le_bytes([bytes[46], bytes[47], bytes[48], bytes[49]]);
+
+        // Parse checksum
+        let checksum = u64::from_le_bytes([
+            bytes[50], bytes[51], bytes[52], bytes[53],
+            bytes[54], bytes[55], bytes[56], bytes[57],
+        ]);
+
+        // Parse compression type
+        let compression_type = match bytes[58] {
+            0 => CompressionType::None,
+            1 => CompressionType::Gorilla,
+            2 => CompressionType::Snappy,
+            3 => CompressionType::GorillaSnappy,
+            n => return Err(format!("Invalid compression type: {}", n)),
+        };
+
+        // Parse flags
+        let flags = ChunkFlags(bytes[59]);
+
+        Ok(Self {
+            magic,
+            version,
+            series_id,
+            start_timestamp,
+            end_timestamp,
+            point_count,
+            compressed_size,
+            uncompressed_size,
+            checksum,
+            compression_type,
+            flags,
+        })
+    }
 }
 
 /// Compression type for chunk data
@@ -294,5 +422,54 @@ mod tests {
         let compressed = ChunkFlags::snappy_compressed();
         assert!(!compressed.is_sealed());
         assert!(compressed.is_snappy_compressed());
+    }
+
+    #[test]
+    fn test_chunk_header_serialization() {
+        let mut header = ChunkHeader::new(12345);
+        header.start_timestamp = 1000;
+        header.end_timestamp = 2000;
+        header.point_count = 100;
+        header.compressed_size = 1024;
+        header.uncompressed_size = 2048;
+        header.checksum = 0x123456789ABCDEF0;
+        header.compression_type = CompressionType::Gorilla;
+        header.flags = ChunkFlags::sealed();
+
+        // Serialize to bytes
+        let bytes = header.to_bytes();
+        assert_eq!(bytes.len(), 64);
+
+        // Verify magic number
+        assert_eq!(&bytes[0..4], &CHUNK_MAGIC.to_le_bytes());
+
+        // Deserialize back
+        let decoded = ChunkHeader::from_bytes(&bytes).unwrap();
+
+        // Verify all fields match
+        assert_eq!(decoded.magic, header.magic);
+        assert_eq!(decoded.version, header.version);
+        assert_eq!(decoded.series_id, header.series_id);
+        assert_eq!(decoded.start_timestamp, header.start_timestamp);
+        assert_eq!(decoded.end_timestamp, header.end_timestamp);
+        assert_eq!(decoded.point_count, header.point_count);
+        assert_eq!(decoded.compressed_size, header.compressed_size);
+        assert_eq!(decoded.uncompressed_size, header.uncompressed_size);
+        assert_eq!(decoded.checksum, header.checksum);
+        assert_eq!(decoded.compression_type, header.compression_type);
+        assert_eq!(decoded.flags.0, header.flags.0);
+    }
+
+    #[test]
+    fn test_chunk_header_deserialization_invalid() {
+        // Too short
+        let short_bytes = vec![0u8; 32];
+        assert!(ChunkHeader::from_bytes(&short_bytes).is_err());
+
+        // Invalid compression type
+        let mut bytes = [0u8; 64];
+        bytes[0..4].copy_from_slice(&CHUNK_MAGIC.to_le_bytes());
+        bytes[58] = 99; // Invalid compression type
+        assert!(ChunkHeader::from_bytes(&bytes).is_err());
     }
 }

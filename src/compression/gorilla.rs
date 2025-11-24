@@ -639,7 +639,7 @@ impl GorillaCompressor {
     /// # Returns
     ///
     /// 64-bit checksum value
-    fn calculate_checksum(data: &[u8]) -> u64 {
+    pub fn calculate_checksum(data: &[u8]) -> u64 {
         crc::Crc::<u64>::new(&crc::CRC_64_ECMA_182).checksum(data)
     }
 }
