@@ -528,6 +528,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_series_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let engine = LocalDiskEngine::new(temp_dir.path().to_path_buf()).unwrap();
+
+        let series_path = engine.series_path(42);
+        assert!(series_path.to_string_lossy().contains("series_42"));
+        assert!(series_path.starts_with(&engine.base_path));
+    }
+
+    #[tokio::test]
+    async fn test_chunk_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let engine = LocalDiskEngine::new(temp_dir.path().to_path_buf()).unwrap();
+
+        let chunk_id = ChunkId::from_string("test-chunk-123");
+
+        // Test different compression types
+        let path_gor = engine.chunk_path(1, &chunk_id, CompressionType::Gorilla);
+        assert!(path_gor.to_string_lossy().contains("series_1"));
+        assert!(path_gor.to_string_lossy().contains("chunk_test-chunk-123"));
+        assert!(path_gor.to_string_lossy().ends_with(".gor"));
+
+        let path_snappy = engine.chunk_path(1, &chunk_id, CompressionType::Snappy);
+        assert!(path_snappy.to_string_lossy().ends_with(".snappy"));
+
+        let path_both = engine.chunk_path(1, &chunk_id, CompressionType::GorillaSnappy);
+        assert!(path_both.to_string_lossy().ends_with(".gor.snappy"));
+
+        let path_none = engine.chunk_path(1, &chunk_id, CompressionType::None);
+        assert!(path_none.to_string_lossy().ends_with(".raw"));
+    }
+
+    #[tokio::test]
+    async fn test_initialize_empty() {
+        use crate::engine::traits::{StorageEngine, StorageConfig};
+
+        let temp_dir = TempDir::new().unwrap();
+        let engine = LocalDiskEngine::new(temp_dir.path().to_path_buf()).unwrap();
+
+        // Initialize on empty directory should succeed
+        let result = engine.initialize(StorageConfig::default()).await;
+        assert!(result.is_ok());
+
+        // Should have no chunks
+        let stats = engine.stats();
+        assert_eq!(stats.total_chunks, 0);
+    }
+
+    #[tokio::test]
     async fn test_list_chunks() {
         let temp_dir = TempDir::new().unwrap();
         let engine = LocalDiskEngine::new(temp_dir.path().to_path_buf()).unwrap();
@@ -535,6 +584,55 @@ mod tests {
         // Initially no chunks
         let chunks = engine.list_chunks(1, None).await.unwrap();
         assert_eq!(chunks.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_list_chunks_with_time_filter() {
+        use crate::engine::traits::{CompressedBlock, BlockMetadata};
+        use crate::types::TimeRange;
+        use bytes::Bytes;
+
+        let temp_dir = TempDir::new().unwrap();
+        let engine = LocalDiskEngine::new(temp_dir.path().to_path_buf()).unwrap();
+
+        // Write chunks with different time ranges
+        for i in 0..5 {
+            let test_data = vec![i as u8; 10];
+            let checksum = crate::compression::gorilla::GorillaCompressor::calculate_checksum(&test_data);
+
+            let block = CompressedBlock {
+                algorithm_id: "gorilla".to_string(),
+                original_size: 20,
+                compressed_size: test_data.len(),
+                checksum,
+                data: Bytes::from(test_data),
+                metadata: BlockMetadata {
+                    start_timestamp: i * 1000,
+                    end_timestamp: i * 1000 + 500,
+                    point_count: 10,
+                    series_id: 1,
+                },
+            };
+
+            engine.write_chunk(1, ChunkId::new(), &block).await.unwrap();
+        }
+
+        // List all chunks
+        let all_chunks = engine.list_chunks(1, None).await.unwrap();
+        assert_eq!(all_chunks.len(), 5);
+
+        // Filter by time range: should get chunks 1, 2, 3
+        let time_range = TimeRange::new(1000, 3500).unwrap();
+        let filtered = engine.list_chunks(1, Some(time_range)).await.unwrap();
+        assert_eq!(filtered.len(), 3);
+        assert_eq!(filtered[0].time_range.start, 1000);
+        assert_eq!(filtered[1].time_range.start, 2000);
+        assert_eq!(filtered[2].time_range.start, 3000);
+
+        // Filter with no overlap
+        let no_overlap = TimeRange::new(10000, 20000).unwrap();
+        let empty = engine.list_chunks(1, Some(no_overlap)).await.unwrap();
+        assert_eq!(empty.len(), 0);
     }
 
     #[tokio::test]
