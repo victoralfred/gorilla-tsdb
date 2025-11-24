@@ -583,6 +583,16 @@ impl Chunk {
 
         // Get mutable access to in-memory points
         if let ChunkData::InMemory(ref mut points) = self.data {
+            // CRITICAL: Hard limit to prevent unbounded memory growth
+            const MAX_CHUNK_POINTS: usize = 10_000_000;  // 10 million points
+            if points.len() >= MAX_CHUNK_POINTS {
+                return Err(format!(
+                    "Chunk has reached maximum size of {} points. \
+                     Call should_seal() and seal before appending more data.",
+                    MAX_CHUNK_POINTS
+                ));
+            }
+
             // P0.2: Check for duplicate timestamp BEFORE inserting
             if points.contains_key(&point.timestamp) {
                 return Err(format!(
@@ -645,19 +655,35 @@ impl Chunk {
             return false;
         }
 
+        // Empty chunks should never seal
+        if self.metadata.point_count == 0 {
+            return false;
+        }
+
         // Check point count threshold
         if self.metadata.point_count >= config.max_points as u32 {
             return true;
         }
 
-        // Check duration threshold
-        let duration = self.metadata.end_timestamp - self.metadata.start_timestamp;
-        if duration >= config.max_duration_ms {
-            return true;
+        // Check duration threshold (use checked_sub to prevent overflow)
+        match self.metadata.end_timestamp.checked_sub(self.metadata.start_timestamp) {
+            Some(duration) => {
+                if duration >= config.max_duration_ms {
+                    return true;
+                }
+            }
+            None => {
+                // Overflow means extreme time range spanning i64 limits
+                // Definitely should seal in this case
+                return true;
+            }
         }
 
         // Check memory size threshold
-        let size_estimate = self.metadata.point_count as usize * std::mem::size_of::<crate::types::DataPoint>();
+        // Account for BTreeMap node overhead (~64 bytes per entry)
+        const BTREEMAP_NODE_OVERHEAD: usize = 64;
+        let size_estimate = self.metadata.point_count as usize
+            * (std::mem::size_of::<crate::types::DataPoint>() + BTREEMAP_NODE_OVERHEAD);
         if size_estimate >= config.max_size_bytes {
             return true;
         }
@@ -764,11 +790,12 @@ impl Chunk {
         file.write_all(&compressed.data).await
             .map_err(|e| format!("Failed to write data: {}", e))?;
 
-        // Flush to ensure data is on disk
-        file.flush().await
-            .map_err(|e| format!("Failed to flush file: {}", e))?;
+        // CRITICAL: Sync to disk before marking sealed
+        // flush() only writes to OS buffers, sync_all() ensures disk persistence
+        file.sync_all().await
+            .map_err(|e| format!("Failed to sync file to disk: {}", e))?;
 
-        // Update chunk state
+        // Update chunk state (only after data is safely on disk)
         self.metadata.path = path.clone();
         self.metadata.compression = CompressionType::Gorilla;
         self.metadata.size_bytes = (64 + compressed.compressed_size) as u64;
