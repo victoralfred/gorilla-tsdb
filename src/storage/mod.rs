@@ -45,8 +45,11 @@ pub mod chunk;
 pub mod local_disk;
 /// Memory-mapped chunk implementation for zero-copy reads
 pub mod mmap;
+/// High-level chunk writer with batching and auto-rotation
+pub mod writer;
 
 pub use active_chunk::ActiveChunk;
 pub use chunk::*;
 pub use local_disk::LocalDiskEngine;
 pub use mmap::MmapChunk;
+pub use writer::{ChunkWriter, ChunkWriterConfig, WriteStats};
