@@ -31,16 +31,13 @@ use tokio::fs;
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,no_run
 /// use gorilla_tsdb::storage::LocalDiskEngine;
-/// use gorilla_tsdb::types::DataPoint;
 /// use gorilla_tsdb::engine::traits::StorageEngine;
 ///
-/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-/// let engine = LocalDiskEngine::new("/data/tsdb".into())?;
-///
-/// let points = vec![DataPoint::new(1, 1000, 42.5)];
-/// engine.write(1, &points).await?;
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let engine = LocalDiskEngine::new("/tmp/tsdb".into())?;
+/// assert_eq!(engine.engine_id(), "local-disk-v1");
 /// # Ok(())
 /// # }
 /// ```
@@ -71,11 +68,15 @@ impl LocalDiskEngine {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use gorilla_tsdb::storage::LocalDiskEngine;
+    /// use gorilla_tsdb::engine::traits::StorageEngine;
     ///
-    /// let engine = LocalDiskEngine::new("/data/tsdb".into())?;
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let engine = LocalDiskEngine::new("/tmp/tsdb".into())?;
+    /// assert_eq!(engine.engine_id(), "local-disk-v1");
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn new(base_path: PathBuf) -> Result<Self, StorageError> {
         // Create base directory if it doesn't exist

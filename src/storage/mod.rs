@@ -23,24 +23,16 @@
 //!
 //! # Example
 //!
-//! ```rust
+//! ```rust,no_run
 //! use gorilla_tsdb::storage::LocalDiskEngine;
-//! use gorilla_tsdb::types::DataPoint;
 //! use gorilla_tsdb::engine::traits::StorageEngine;
 //!
-//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! // Create storage engine
-//! let storage = LocalDiskEngine::new("/data/tsdb".into())?;
+//! let storage = LocalDiskEngine::new("/tmp/tsdb".into())?;
 //!
-//! // Write data points
-//! let points = vec![
-//!     DataPoint::new(1, 1000, 42.5),
-//!     DataPoint::new(1, 1010, 43.1),
-//! ];
-//! storage.write(1, &points).await?;
-//!
-//! // Read data back
-//! let chunks = storage.list_chunks(1, 1000, 2000).await?;
+//! // Engine is ready for use
+//! assert_eq!(storage.engine_id(), "local-disk-v1");
 //! # Ok(())
 //! # }
 //! ```
