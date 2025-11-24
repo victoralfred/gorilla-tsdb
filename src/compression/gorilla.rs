@@ -78,23 +78,23 @@ impl GorillaCompressor {
         let mut prev_delta = first_delta;
 
         for point in &points[2..] {
-            let delta = point.timestamp - prev_timestamp;
-            let dod = delta - prev_delta;
+            let delta = point.timestamp.wrapping_sub(prev_timestamp);
+            let dod = delta.wrapping_sub(prev_delta);
 
             // Encode delta-of-delta with variable bit packing
             if dod == 0 {
                 // No change in delta: 1 bit
                 writer.write_bit(false);
-            } else if (-63..=64).contains(&dod) {
-                // Small change: '10' + 7 bits
+            } else if (-63..64).contains(&dod) {
+                // Small change: '10' + 7 bits (range: 127 values fit in 7 bits)
                 writer.write_bits(0b10, 2);
                 writer.write_bits(((dod + 63) as u64) & 0x7F, 7);
-            } else if (-255..=256).contains(&dod) {
-                // Medium change: '110' + 9 bits
+            } else if (-255..256).contains(&dod) {
+                // Medium change: '110' + 9 bits (range: 511 values fit in 9 bits)
                 writer.write_bits(0b110, 3);
                 writer.write_bits(((dod + 255) as u64) & 0x1FF, 9);
-            } else if (-2047..=2048).contains(&dod) {
-                // Large change: '1110' + 12 bits
+            } else if (-2047..2048).contains(&dod) {
+                // Large change: '1110' + 12 bits (range: 4095 values fit in 12 bits)
                 writer.write_bits(0b1110, 4);
                 writer.write_bits(((dod + 2047) as u64) & 0xFFF, 12);
             } else {
@@ -113,6 +113,15 @@ impl GorillaCompressor {
         count: usize,
         reader: &mut BitReader,
     ) -> Result<Vec<i64>, CompressionError> {
+        // Maximum reasonable points per block (10 million)
+        const MAX_POINTS_PER_BLOCK: usize = 10_000_000;
+
+        if count > MAX_POINTS_PER_BLOCK {
+            return Err(CompressionError::InvalidData(
+                format!("Point count {} exceeds maximum allowed {}", count, MAX_POINTS_PER_BLOCK)
+            ));
+        }
+
         if count == 0 {
             return Ok(Vec::new());
         }
@@ -137,28 +146,29 @@ impl GorillaCompressor {
         let mut prev_delta = first_delta;
 
         for _ in 2..count {
-            let dod = if !reader.read_bit()? {
-                // Delta didn't change
-                0
+            let delta = if !reader.read_bit()? {
+                // Delta didn't change, dod = 0
+                prev_delta
             } else {
                 // Check control bits
                 if !reader.read_bit()? {
                     // '10' - 7 bits
-                    (reader.read_bits(7)? as i64) - 63
+                    let dod = (reader.read_bits(7)? as i64) - 63;
+                    prev_delta + dod
                 } else if !reader.read_bit()? {
                     // '110' - 9 bits
-                    (reader.read_bits(9)? as i64) - 255
+                    let dod = (reader.read_bits(9)? as i64) - 255;
+                    prev_delta + dod
                 } else if !reader.read_bit()? {
                     // '1110' - 12 bits
-                    (reader.read_bits(12)? as i64) - 2047
+                    let dod = (reader.read_bits(12)? as i64) - 2047;
+                    prev_delta + dod
                 } else {
-                    // '1111' - 32 bits (full delta)
-                    prev_delta = reader.read_bits(32)? as i64;
-                    0 // dod = 0 since we read full delta
+                    // '1111' - 32 bits (full delta - bypass delta-of-delta)
+                    reader.read_bits(32)? as i64
                 }
             };
 
-            let delta = prev_delta + dod;
             let timestamp = prev_timestamp + delta;
             timestamps.push(timestamp);
 
@@ -232,6 +242,15 @@ impl GorillaCompressor {
         count: usize,
         reader: &mut BitReader,
     ) -> Result<Vec<f64>, CompressionError> {
+        // Maximum reasonable points per block (10 million)
+        const MAX_POINTS_PER_BLOCK: usize = 10_000_000;
+
+        if count > MAX_POINTS_PER_BLOCK {
+            return Err(CompressionError::InvalidData(
+                format!("Point count {} exceeds maximum allowed {}", count, MAX_POINTS_PER_BLOCK)
+            ));
+        }
+
         if count == 0 {
             return Ok(Vec::new());
         }
@@ -354,8 +373,10 @@ impl Compressor for GorillaCompressor {
             checksum,
             data: Bytes::from(compressed_data),
             metadata: BlockMetadata {
-                start_timestamp: points.first().unwrap().timestamp,
-                end_timestamp: points.last().unwrap().timestamp,
+                start_timestamp: points.first()
+                    .expect("points already validated non-empty").timestamp,
+                end_timestamp: points.last()
+                    .expect("points already validated non-empty").timestamp,
                 point_count: points.len(),
                 series_id: points[0].series_id,
             },
@@ -380,6 +401,15 @@ impl Compressor for GorillaCompressor {
 
         // Read point count
         let count = reader.read_bits(32)? as usize;
+
+        // Maximum reasonable points per block (10 million)
+        const MAX_POINTS_PER_BLOCK: usize = 10_000_000;
+
+        if count > MAX_POINTS_PER_BLOCK {
+            return Err(CompressionError::InvalidData(
+                format!("Point count {} exceeds maximum allowed {}", count, MAX_POINTS_PER_BLOCK)
+            ));
+        }
 
         if count == 0 {
             return Ok(Vec::new());

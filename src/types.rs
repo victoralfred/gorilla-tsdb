@@ -67,8 +67,18 @@ pub struct TimeRange {
 }
 
 impl TimeRange {
-    /// Create a new time range
-    pub fn new(start: i64, end: i64) -> Self {
+    /// Create a new time range with validation
+    pub fn new(start: i64, end: i64) -> Result<Self, crate::error::Error> {
+        if start > end {
+            return Err(crate::error::Error::Configuration(
+                format!("Invalid time range: start {} > end {}", start, end)
+            ));
+        }
+        Ok(Self { start, end })
+    }
+
+    /// Create a new time range without validation (use with caution)
+    pub fn new_unchecked(start: i64, end: i64) -> Self {
         Self { start, end }
     }
 
@@ -78,8 +88,8 @@ impl TimeRange {
     }
 
     /// Get the duration of this range in milliseconds
-    pub fn duration_ms(&self) -> i64 {
-        self.end - self.start
+    pub fn duration_ms(&self) -> Option<i64> {
+        self.end.checked_sub(self.start)
     }
 }
 
@@ -181,11 +191,14 @@ mod tests {
 
     #[test]
     fn test_time_range() {
-        let range = TimeRange::new(100, 200);
+        let range = TimeRange::new(100, 200).unwrap();
         assert!(range.contains(150));
         assert!(!range.contains(50));
         assert!(!range.contains(250));
-        assert_eq!(range.duration_ms(), 100);
+        assert_eq!(range.duration_ms(), Some(100));
+
+        // Test invalid range
+        assert!(TimeRange::new(200, 100).is_err());
     }
 
     #[test]

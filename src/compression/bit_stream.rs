@@ -26,8 +26,9 @@ impl BitWriter {
         }
 
         self.bit_position += 1;
+        debug_assert!(self.bit_position <= 8, "bit_position overflow");
 
-        if self.bit_position == 8 {
+        if self.bit_position >= 8 {
             self.buffer.push(self.current_byte);
             self.current_byte = 0;
             self.bit_position = 0;
@@ -36,7 +37,7 @@ impl BitWriter {
 
     /// Write multiple bits from a u64 value
     pub fn write_bits(&mut self, value: u64, num_bits: u8) {
-        assert!(num_bits <= 64, "Cannot write more than 64 bits");
+        debug_assert!(num_bits <= 64, "Cannot write more than 64 bits");
 
         for i in (0..num_bits).rev() {
             let bit = (value >> i) & 1 == 1;
@@ -103,7 +104,7 @@ impl<'a> BitReader<'a> {
 
         self.bit_position += 1;
 
-        if self.bit_position == 8 {
+        if self.bit_position >= 8 {
             self.byte_position += 1;
             self.bit_position = 0;
         }
@@ -113,7 +114,11 @@ impl<'a> BitReader<'a> {
 
     /// Read multiple bits into a u64 value
     pub fn read_bits(&mut self, num_bits: u8) -> Result<u64, CompressionError> {
-        assert!(num_bits <= 64, "Cannot read more than 64 bits");
+        if num_bits > 64 {
+            return Err(CompressionError::InvalidData(
+                format!("Cannot read more than 64 bits (requested: {})", num_bits)
+            ));
+        }
 
         let mut value: u64 = 0;
 
