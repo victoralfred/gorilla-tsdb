@@ -37,8 +37,10 @@
 //! # }
 //! ```
 
+pub mod active_chunk;
 pub mod chunk;
 pub mod local_disk;
 
+pub use active_chunk::ActiveChunk;
 pub use chunk::*;
 pub use local_disk::LocalDiskEngine;

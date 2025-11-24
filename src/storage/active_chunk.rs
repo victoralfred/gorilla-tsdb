@@ -1,0 +1,489 @@
+///! Active chunk management with thread-safe, out-of-order point handling
+///!
+///! This module provides `ActiveChunk`, a thread-safe wrapper around chunk data
+///! that supports:
+///! - Concurrent appends from multiple threads
+///! - Out-of-order point handling (maintains sorted order)
+///! - Automatic sealing based on configurable thresholds
+///! - Lock-free reads for common operations
+
+use crate::storage::chunk::Chunk;
+use crate::types::{DataPoint, SeriesId};
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::RwLock;
+use std::time::Instant;
+
+// Re-export SealConfig for convenience
+pub use crate::storage::chunk::SealConfig;
+
+/// Active chunk with thread-safe operations and out-of-order handling
+///
+/// `ActiveChunk` wraps the basic `Chunk` with additional capabilities:
+/// - **Thread Safety**: Uses `RwLock` for concurrent access
+/// - **Out-of-Order**: `BTreeMap` maintains sorted order by timestamp
+/// - **Lock-Free Reads**: Atomic counters for common queries
+///
+/// # Example
+///
+/// ```
+/// use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
+/// use gorilla_tsdb::types::DataPoint;
+/// use std::sync::Arc;
+/// use std::thread;
+///
+/// let chunk = Arc::new(ActiveChunk::new(1, 1000, SealConfig::default()));
+///
+/// // Multiple threads can append concurrently
+/// let chunk_clone = Arc::clone(&chunk);
+/// thread::spawn(move || {
+///     chunk_clone.append(DataPoint {
+///         series_id: 1,
+///         timestamp: 1000,
+///         value: 42.0
+///     }).unwrap();
+/// });
+///
+/// // Check if sealing needed (lock-free)
+/// if chunk.should_seal() {
+///     // Seal the chunk
+/// }
+/// ```
+pub struct ActiveChunk {
+    /// Series this chunk belongs to
+    series_id: SeriesId,
+
+    /// Points stored in sorted order (by timestamp)
+    /// BTreeMap automatically maintains sort order for out-of-order inserts
+    points: RwLock<BTreeMap<i64, DataPoint>>,
+
+    /// Atomic counter for lock-free reads
+    point_count: AtomicU32,
+
+    /// Whether chunk has been sealed
+    sealed: AtomicBool,
+
+    /// Chunk creation time
+    created_at: Instant,
+
+    /// Initial capacity hint
+    capacity: usize,
+
+    /// Sealing configuration
+    seal_config: SealConfig,
+}
+
+impl ActiveChunk {
+    /// Create a new active chunk
+    ///
+    /// # Arguments
+    ///
+    /// * `series_id` - Series identifier
+    /// * `capacity` - Initial capacity hint (not a hard limit)
+    /// * `seal_config` - Configuration for when to seal the chunk
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
+    ///
+    /// let config = SealConfig {
+    ///     max_points: 10_000,
+    ///     max_duration_ms: 3_600_000, // 1 hour
+    ///     max_size_bytes: 1_048_576,   // 1MB
+    /// };
+    ///
+    /// let chunk = ActiveChunk::new(42, 1000, config);
+    /// assert_eq!(chunk.point_count(), 0);
+    /// ```
+    pub fn new(series_id: SeriesId, capacity: usize, seal_config: SealConfig) -> Self {
+        Self {
+            series_id,
+            points: RwLock::new(BTreeMap::new()),
+            point_count: AtomicU32::new(0),
+            sealed: AtomicBool::new(false),
+            created_at: Instant::now(),
+            capacity,
+            seal_config,
+        }
+    }
+
+    /// Append a point to the chunk
+    ///
+    /// This method is thread-safe and handles out-of-order points automatically.
+    /// Points are stored in a `BTreeMap` keyed by timestamp, ensuring sorted order.
+    ///
+    /// # Arguments
+    ///
+    /// * `point` - Data point to append
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(())` if point was successfully added
+    /// - `Err(String)` if:
+    ///   - Series ID doesn't match
+    ///   - Chunk is already sealed
+    ///
+    /// # Thread Safety
+    ///
+    /// Multiple threads can call this method concurrently. The implementation uses
+    /// `RwLock` to ensure exclusive write access while allowing concurrent reads.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
+    /// use gorilla_tsdb::types::DataPoint;
+    ///
+    /// let chunk = ActiveChunk::new(1, 100, SealConfig::default());
+    ///
+    /// // Points can arrive out of order
+    /// chunk.append(DataPoint { series_id: 1, timestamp: 100, value: 1.0 }).unwrap();
+    /// chunk.append(DataPoint { series_id: 1, timestamp: 50, value: 2.0 }).unwrap();
+    /// chunk.append(DataPoint { series_id: 1, timestamp: 75, value: 3.0 }).unwrap();
+    ///
+    /// // All points are stored in sorted order
+    /// assert_eq!(chunk.point_count(), 3);
+    /// let (start, end) = chunk.time_range();
+    /// assert_eq!(start, 50);
+    /// assert_eq!(end, 100);
+    /// ```
+    pub fn append(&self, point: DataPoint) -> Result<(), String> {
+        // Check if sealed (lock-free check)
+        if self.sealed.load(Ordering::Acquire) {
+            return Err("Cannot append to sealed chunk".to_string());
+        }
+
+        // Validate series ID
+        if point.series_id != self.series_id {
+            return Err(format!(
+                "Point series_id {} doesn't match chunk series_id {}",
+                point.series_id, self.series_id
+            ));
+        }
+
+        // Acquire write lock and insert
+        {
+            let mut points = self.points.write().unwrap();
+
+            // Insert into BTreeMap (handles out-of-order automatically)
+            // Note: If duplicate timestamp exists, this overwrites
+            points.insert(point.timestamp, point);
+
+            // Update atomic counter
+            self.point_count.store(points.len() as u32, Ordering::Release);
+        }
+
+        Ok(())
+    }
+
+    /// Check if chunk should be sealed
+    ///
+    /// Returns `true` if any threshold is exceeded:
+    /// - Point count >= `max_points`
+    /// - Duration >= `max_duration_ms`
+    /// - Memory size >= `max_size_bytes`
+    ///
+    /// This method is lock-free for the point count check and uses a read lock
+    /// for time range checks.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
+    /// use gorilla_tsdb::types::DataPoint;
+    ///
+    /// let config = SealConfig {
+    ///     max_points: 5,
+    ///     max_duration_ms: 10_000,
+    ///     max_size_bytes: 10_000,
+    /// };
+    ///
+    /// let chunk = ActiveChunk::new(1, 10, config);
+    ///
+    /// for i in 0..5 {
+    ///     chunk.append(DataPoint {
+    ///         series_id: 1,
+    ///         timestamp: i * 1000,
+    ///         value: i as f64
+    ///     }).unwrap();
+    /// }
+    ///
+    /// assert!(chunk.should_seal());
+    /// ```
+    pub fn should_seal(&self) -> bool {
+        // Check if already sealed
+        if self.sealed.load(Ordering::Acquire) {
+            return false;
+        }
+
+        // Check point count (lock-free)
+        let count = self.point_count.load(Ordering::Acquire);
+        if count >= self.seal_config.max_points as u32 {
+            return true;
+        }
+
+        // Check duration and size (requires read lock)
+        let points = self.points.read().unwrap();
+
+        if points.is_empty() {
+            return false;
+        }
+
+        // Get time range
+        let start = *points.keys().next().unwrap();
+        let end = *points.keys().last().unwrap();
+        let duration = end - start;
+
+        if duration >= self.seal_config.max_duration_ms {
+            return true;
+        }
+
+        // Check memory size estimate
+        let size_estimate = points.len() * std::mem::size_of::<DataPoint>();
+        if size_estimate >= self.seal_config.max_size_bytes {
+            return true;
+        }
+
+        false
+    }
+
+    /// Seal the chunk and convert to disk-based `Chunk`
+    ///
+    /// This operation:
+    /// 1. Marks chunk as sealed (prevents further appends)
+    /// 2. Extracts all points in sorted order
+    /// 3. Creates a `Chunk` and seals it to disk
+    /// 4. Returns the sealed `Chunk`
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - Chunk is already sealed
+    /// - Chunk is empty
+    /// - Disk write fails
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
+    /// use gorilla_tsdb::types::DataPoint;
+    ///
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let chunk = ActiveChunk::new(1, 100, SealConfig::default());
+    ///
+    /// chunk.append(DataPoint { series_id: 1, timestamp: 1000, value: 42.0 })?;
+    ///
+    /// let sealed_chunk = chunk.seal("/tmp/chunk.gor".into()).await?;
+    /// assert!(sealed_chunk.is_sealed());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn seal(&self, path: PathBuf) -> Result<Chunk, String> {
+        // Try to mark as sealed
+        if self.sealed.swap(true, Ordering::AcqRel) {
+            return Err("Chunk already sealed".to_string());
+        }
+
+        // Extract points (acquire write lock to prevent concurrent modifications)
+        let points_vec = {
+            let points = self.points.write().unwrap();
+
+            if points.is_empty() {
+                // Restore sealed flag on error
+                self.sealed.store(false, Ordering::Release);
+                return Err("Cannot seal empty chunk".to_string());
+            }
+
+            // Extract in sorted order (BTreeMap maintains order)
+            points.values().cloned().collect::<Vec<_>>()
+        };
+
+        // Create and seal a Chunk
+        let mut chunk = Chunk::new_active(self.series_id, points_vec.len());
+
+        // Append all points
+        for point in points_vec {
+            chunk.append(point).map_err(|e| format!("Failed to add point: {}", e))?;
+        }
+
+        // Seal the chunk
+        chunk.seal(path).await?;
+
+        Ok(chunk)
+    }
+
+    /// Get current point count (lock-free)
+    ///
+    /// This method uses an atomic counter and doesn't require locking,
+    /// making it very fast for monitoring and metrics.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
+    /// use gorilla_tsdb::types::DataPoint;
+    ///
+    /// let chunk = ActiveChunk::new(1, 100, SealConfig::default());
+    /// assert_eq!(chunk.point_count(), 0);
+    ///
+    /// chunk.append(DataPoint { series_id: 1, timestamp: 1000, value: 42.0 }).unwrap();
+    /// assert_eq!(chunk.point_count(), 1);
+    /// ```
+    pub fn point_count(&self) -> u32 {
+        self.point_count.load(Ordering::Acquire)
+    }
+
+    /// Get time range of points in chunk
+    ///
+    /// Returns `(start_timestamp, end_timestamp)` where points are stored
+    /// in sorted order. Returns `(0, 0)` if chunk is empty.
+    ///
+    /// This method acquires a read lock to access the BTreeMap.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
+    /// use gorilla_tsdb::types::DataPoint;
+    ///
+    /// let chunk = ActiveChunk::new(1, 100, SealConfig::default());
+    ///
+    /// chunk.append(DataPoint { series_id: 1, timestamp: 100, value: 1.0 }).unwrap();
+    /// chunk.append(DataPoint { series_id: 1, timestamp: 50, value: 2.0 }).unwrap();
+    /// chunk.append(DataPoint { series_id: 1, timestamp: 200, value: 3.0 }).unwrap();
+    ///
+    /// let (start, end) = chunk.time_range();
+    /// assert_eq!(start, 50);
+    /// assert_eq!(end, 200);
+    /// ```
+    pub fn time_range(&self) -> (i64, i64) {
+        let points = self.points.read().unwrap();
+
+        if points.is_empty() {
+            return (0, 0);
+        }
+
+        let start = *points.keys().next().unwrap();
+        let end = *points.keys().last().unwrap();
+        (start, end)
+    }
+
+    /// Check if chunk is sealed
+    ///
+    /// This is a lock-free operation using atomic load.
+    pub fn is_sealed(&self) -> bool {
+        self.sealed.load(Ordering::Acquire)
+    }
+
+    /// Get series ID
+    pub fn series_id(&self) -> SeriesId {
+        self.series_id
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_active_chunk() {
+        let chunk = ActiveChunk::new(42, 1000, SealConfig::default());
+
+        assert_eq!(chunk.series_id(), 42);
+        assert_eq!(chunk.point_count(), 0);
+        assert!(!chunk.is_sealed());
+        assert_eq!(chunk.time_range(), (0, 0));
+    }
+
+    #[test]
+    fn test_append_single_point() {
+        let chunk = ActiveChunk::new(1, 100, SealConfig::default());
+
+        let point = DataPoint {
+            series_id: 1,
+            timestamp: 1000,
+            value: 42.0,
+        };
+
+        chunk.append(point).unwrap();
+
+        assert_eq!(chunk.point_count(), 1);
+        assert_eq!(chunk.time_range(), (1000, 1000));
+    }
+
+    #[test]
+    fn test_append_out_of_order() {
+        let chunk = ActiveChunk::new(1, 100, SealConfig::default());
+
+        // Insert in random order
+        chunk.append(DataPoint { series_id: 1, timestamp: 300, value: 3.0 }).unwrap();
+        chunk.append(DataPoint { series_id: 1, timestamp: 100, value: 1.0 }).unwrap();
+        chunk.append(DataPoint { series_id: 1, timestamp: 200, value: 2.0 }).unwrap();
+
+        assert_eq!(chunk.point_count(), 3);
+
+        // Should be sorted
+        let (start, end) = chunk.time_range();
+        assert_eq!(start, 100);
+        assert_eq!(end, 300);
+    }
+
+    #[test]
+    fn test_append_wrong_series() {
+        let chunk = ActiveChunk::new(1, 100, SealConfig::default());
+
+        let result = chunk.append(DataPoint {
+            series_id: 2,
+            timestamp: 1000,
+            value: 42.0,
+        });
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("doesn't match"));
+    }
+
+    #[tokio::test]
+    async fn test_seal_success() {
+        let chunk = ActiveChunk::new(1, 100, SealConfig::default());
+
+        chunk.append(DataPoint {
+            series_id: 1,
+            timestamp: 1000,
+            value: 42.0,
+        }).unwrap();
+
+        let result = chunk.seal("/tmp/test_active_chunk_seal.gor".into()).await;
+
+        assert!(result.is_ok());
+        assert!(chunk.is_sealed());
+    }
+
+    #[tokio::test]
+    async fn test_seal_empty() {
+        let chunk = ActiveChunk::new(1, 100, SealConfig::default());
+
+        let result = chunk.seal("/tmp/test.gor".into()).await;
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("empty"));
+    }
+
+    #[tokio::test]
+    async fn test_append_after_seal() {
+        let chunk = ActiveChunk::new(1, 100, SealConfig::default());
+
+        chunk.append(DataPoint { series_id: 1, timestamp: 1000, value: 42.0 }).unwrap();
+        chunk.seal("/tmp/test.gor".into()).await.unwrap();
+
+        let result = chunk.append(DataPoint {
+            series_id: 1,
+            timestamp: 2000,
+            value: 43.0,
+        });
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("sealed"));
+    }
+}
