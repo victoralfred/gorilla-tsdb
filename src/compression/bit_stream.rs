@@ -1,16 +1,69 @@
 //! Bit-level I/O primitives for Gorilla compression
+//!
+//! This module provides low-level bit manipulation utilities for reading and writing
+//! individual bits and bit sequences. These are essential for the Gorilla compression
+//! algorithm which requires precise bit-level control.
+//!
+//! # Overview
+//!
+//! Bits are stored MSB-first (most significant bit first) within each byte:
+//! ```text
+//! Byte: [bit0 bit1 bit2 bit3 bit4 bit5 bit6 bit7]
+//!        MSB                                    LSB
+//! ```
+//!
+//! # Example
+//! ```
+//! use gorilla_tsdb::compression::bit_stream::{BitWriter, BitReader};
+//!
+//! // Write some bits
+//! let mut writer = BitWriter::new();
+//! writer.write_bit(true);
+//! writer.write_bits(0b1010, 4);
+//! let buffer = writer.finish();
+//!
+//! // Read them back
+//! let mut reader = BitReader::new(&buffer);
+//! assert!(reader.read_bit().unwrap());
+//! assert_eq!(reader.read_bits(4).unwrap(), 0b1010);
+//! ```
 
 use crate::error::CompressionError;
 
 /// Writer for bit-level operations
+///
+/// `BitWriter` accumulates bits into bytes and maintains precise bit-level positioning.
+/// Bits are written MSB-first within each byte, matching the Gorilla paper specification.
+///
+/// # Internal State
+///
+/// - `buffer`: Completed bytes that have been fully written
+/// - `current_byte`: The byte currently being assembled (0-7 bits written)
+/// - `bit_position`: Position within current_byte (0-7), indicating how many bits are used
+///
+/// # Example
+/// ```
+/// let mut writer = BitWriter::new();
+/// writer.write_bit(true);   // Writes 1 to bit position 0
+/// writer.write_bits(5, 3);  // Writes 101 to bit positions 1-3
+/// let data = writer.finish(); // Flushes partial byte if needed
+/// ```
 pub struct BitWriter {
+    /// Buffer of fully completed bytes
     buffer: Vec<u8>,
+    /// Current byte being assembled (contains 0-7 bits)
     current_byte: u8,
+    /// Number of bits written to current_byte (0-7)
     bit_position: u8,
 }
 
 impl BitWriter {
-    /// Create a new bit writer
+    /// Create a new bit writer with empty state
+    ///
+    /// Initializes with:
+    /// - Empty buffer
+    /// - current_byte = 0
+    /// - bit_position = 0
     pub fn new() -> Self {
         Self {
             buffer: Vec::new(),
@@ -19,34 +72,97 @@ impl BitWriter {
         }
     }
 
-    /// Write a single bit
+    /// Write a single bit to the stream
+    ///
+    /// Bits are written MSB-first within each byte. When a byte is complete (8 bits),
+    /// it's automatically flushed to the buffer and a new byte is started.
+    ///
+    /// # Arguments
+    /// * `bit` - The bit value to write (true = 1, false = 0)
+    ///
+    /// # Example
+    /// ```
+    /// let mut writer = BitWriter::new();
+    /// writer.write_bit(true);   // Writes bit 1
+    /// writer.write_bit(false);  // Writes bit 0
+    /// ```
     pub fn write_bit(&mut self, bit: bool) {
+        // If bit is true (1), set the appropriate bit in current_byte
+        // Position is calculated as (7 - bit_position) for MSB-first ordering
         if bit {
             self.current_byte |= 1 << (7 - self.bit_position);
         }
+        // Note: if bit is false, we don't need to do anything since current_byte
+        // starts at 0 and false bits remain 0
 
+        // Move to next bit position
         self.bit_position += 1;
+
+        // Safety check: ensure bit_position never exceeds 8
         debug_assert!(self.bit_position <= 8, "bit_position overflow");
 
+        // If we've filled a complete byte (8 bits), flush it to buffer
         if self.bit_position >= 8 {
             self.buffer.push(self.current_byte);
-            self.current_byte = 0;
-            self.bit_position = 0;
+            self.current_byte = 0;       // Reset for next byte
+            self.bit_position = 0;       // Reset position counter
         }
     }
 
     /// Write multiple bits from a u64 value
+    ///
+    /// Writes bits MSB-first from the value. For example, write_bits(0b1010, 4)
+    /// will write the bits 1, 0, 1, 0 in that order.
+    ///
+    /// # Arguments
+    /// * `value` - The value containing the bits to write
+    /// * `num_bits` - Number of bits to write (must be <= 64)
+    ///
+    /// # Panics
+    /// In debug mode, panics if num_bits > 64
+    ///
+    /// # Example
+    /// ```
+    /// let mut writer = BitWriter::new();
+    /// writer.write_bits(0b1010, 4);  // Writes bits: 1, 0, 1, 0
+    /// writer.write_bits(0xFF, 8);    // Writes 8 bits: all 1s
+    /// ```
     pub fn write_bits(&mut self, value: u64, num_bits: u8) {
         debug_assert!(num_bits <= 64, "Cannot write more than 64 bits");
 
+        // Write bits from MSB to LSB by iterating in reverse order
+        // For num_bits=4, value=0b1010:
+        //   i=3: writes bit at position 3 (1)
+        //   i=2: writes bit at position 2 (0)
+        //   i=1: writes bit at position 1 (1)
+        //   i=0: writes bit at position 0 (0)
         for i in (0..num_bits).rev() {
+            // Extract the i-th bit: shift right by i positions and mask with 1
             let bit = (value >> i) & 1 == 1;
             self.write_bit(bit);
         }
     }
 
-    /// Flush remaining bits and return the buffer
+    /// Flush remaining bits and return the completed buffer
+    ///
+    /// If there are any bits in the current_byte (bit_position > 0), they are
+    /// flushed to the buffer. The remaining bits in the byte will be 0-padded.
+    ///
+    /// This method consumes self and returns the final byte buffer.
+    ///
+    /// # Returns
+    /// Vector of bytes containing all written bits
+    ///
+    /// # Example
+    /// ```
+    /// let mut writer = BitWriter::new();
+    /// writer.write_bits(0b1010, 4);  // Only 4 bits written
+    /// let buffer = writer.finish();   // Flushes with 4 trailing zero bits
+    /// assert_eq!(buffer.len(), 1);    // One byte total
+    /// ```
     pub fn finish(mut self) -> Vec<u8> {
+        // If there are any bits written in current_byte, flush it
+        // The remaining bits (8 - bit_position) will be 0-padded
         if self.bit_position > 0 {
             self.buffer.push(self.current_byte);
         }
@@ -54,15 +170,25 @@ impl BitWriter {
     }
 
     /// Get current buffer size in bytes
+    ///
+    /// Returns the number of bytes that will be in the final buffer.
+    /// If there are any bits in current_byte, they count as a full byte.
+    ///
+    /// # Returns
+    /// Total number of bytes (including partial byte if present)
     pub fn len(&self) -> usize {
         let mut len = self.buffer.len();
+        // If we have any bits in current_byte, count it as one more byte
         if self.bit_position > 0 {
             len += 1;
         }
         len
     }
 
-    /// Check if buffer is empty
+    /// Check if buffer is empty (no bits written yet)
+    ///
+    /// # Returns
+    /// true if no bits have been written, false otherwise
     pub fn is_empty(&self) -> bool {
         self.buffer.is_empty() && self.bit_position == 0
     }
@@ -75,14 +201,50 @@ impl Default for BitWriter {
 }
 
 /// Reader for bit-level operations
+///
+/// `BitReader` reads bits sequentially from a byte buffer, maintaining precise
+/// bit-level positioning. Reads are performed MSB-first within each byte.
+///
+/// # Internal State
+///
+/// - `buffer`: The source byte slice to read from
+/// - `byte_position`: Current byte being read (index into buffer)
+/// - `bit_position`: Position within current byte (0-7)
+///
+/// # Error Handling
+///
+/// Returns `CompressionError::CorruptedData` if attempting to read past the end
+/// of the buffer, which indicates corrupted or truncated compressed data.
+///
+/// # Example
+/// ```
+/// let data = vec![0b10101100];
+/// let mut reader = BitReader::new(&data);
+/// assert!(reader.read_bit().unwrap());   // Reads 1
+/// assert!(!reader.read_bit().unwrap());  // Reads 0
+/// ```
 pub struct BitReader<'a> {
+    /// Source byte buffer to read from (borrowed)
     buffer: &'a [u8],
+    /// Current byte index in buffer
     byte_position: usize,
+    /// Current bit position within the current byte (0-7)
     bit_position: u8,
 }
 
 impl<'a> BitReader<'a> {
-    /// Create a new bit reader
+    /// Create a new bit reader from a byte slice
+    ///
+    /// Initializes reading from the beginning of the buffer (position 0, bit 0).
+    ///
+    /// # Arguments
+    /// * `buffer` - Byte slice to read from
+    ///
+    /// # Example
+    /// ```
+    /// let data = vec![0xFF, 0x00];
+    /// let reader = BitReader::new(&data);
+    /// ```
     pub fn new(buffer: &'a [u8]) -> Self {
         Self {
             buffer,
@@ -91,29 +253,79 @@ impl<'a> BitReader<'a> {
         }
     }
 
-    /// Read a single bit
+    /// Read a single bit from the stream
+    ///
+    /// Reads the next bit in MSB-first order from the current position.
+    /// Automatically advances to the next byte when a byte boundary is crossed.
+    ///
+    /// # Returns
+    /// - `Ok(bool)` - The bit value (true = 1, false = 0)
+    /// - `Err(CompressionError)` - If attempting to read past end of buffer
+    ///
+    /// # Errors
+    /// Returns `CorruptedData` error if we've reached the end of the buffer,
+    /// indicating the compressed data is truncated or corrupted.
+    ///
+    /// # Example
+    /// ```
+    /// let data = vec![0b10101010];
+    /// let mut reader = BitReader::new(&data);
+    /// assert!(reader.read_bit().unwrap());   // 1
+    /// assert!(!reader.read_bit().unwrap());  // 0
+    /// ```
     pub fn read_bit(&mut self) -> Result<bool, CompressionError> {
+        // Check if we've reached the end of the buffer
         if self.byte_position >= self.buffer.len() {
             return Err(CompressionError::CorruptedData(
                 "Unexpected end of buffer".to_string(),
             ));
         }
 
+        // Get the current byte we're reading from
         let byte = self.buffer[self.byte_position];
+
+        // Extract the bit at position (7 - bit_position) for MSB-first ordering
+        // Example: for bit_position=0, we read bit 7 (MSB)
+        //          for bit_position=7, we read bit 0 (LSB)
         let bit = (byte >> (7 - self.bit_position)) & 1 == 1;
 
+        // Move to next bit position
         self.bit_position += 1;
 
+        // If we've read all 8 bits of current byte, move to next byte
         if self.bit_position >= 8 {
-            self.byte_position += 1;
-            self.bit_position = 0;
+            self.byte_position += 1;  // Move to next byte
+            self.bit_position = 0;    // Reset to first bit of new byte
         }
 
         Ok(bit)
     }
 
     /// Read multiple bits into a u64 value
+    ///
+    /// Reads the specified number of bits and assembles them into a u64 value.
+    /// Bits are read MSB-first and accumulated left-to-right.
+    ///
+    /// # Arguments
+    /// * `num_bits` - Number of bits to read (must be <= 64)
+    ///
+    /// # Returns
+    /// - `Ok(u64)` - The assembled value from the bits read
+    /// - `Err(CompressionError)` - If num_bits > 64 or buffer ends prematurely
+    ///
+    /// # Errors
+    /// - `InvalidData` if num_bits > 64
+    /// - `CorruptedData` if we run out of data while reading
+    ///
+    /// # Example
+    /// ```
+    /// let data = vec![0b10101100];
+    /// let mut reader = BitReader::new(&data);
+    /// let value = reader.read_bits(4).unwrap();  // Reads 0b1010
+    /// assert_eq!(value, 0b1010);
+    /// ```
     pub fn read_bits(&mut self, num_bits: u8) -> Result<u64, CompressionError> {
+        // Validate input: can't read more than 64 bits into a u64
         if num_bits > 64 {
             return Err(CompressionError::InvalidData(
                 format!("Cannot read more than 64 bits (requested: {})", num_bits)
@@ -122,6 +334,13 @@ impl<'a> BitReader<'a> {
 
         let mut value: u64 = 0;
 
+        // Read bits one at a time and accumulate them
+        // Each iteration: shift value left 1 bit and add the new bit
+        // Example: Reading 4 bits (1,0,1,0):
+        //   Iteration 1: value = 0b0     -> read 1 -> value = 0b1
+        //   Iteration 2: value = 0b1     -> read 0 -> value = 0b10
+        //   Iteration 3: value = 0b10    -> read 1 -> value = 0b101
+        //   Iteration 4: value = 0b101   -> read 0 -> value = 0b1010
         for _ in 0..num_bits {
             value = (value << 1) | (self.read_bit()? as u64);
         }
@@ -129,12 +348,32 @@ impl<'a> BitReader<'a> {
         Ok(value)
     }
 
-    /// Check if we've reached the end
+    /// Check if we've reached the end of the buffer
+    ///
+    /// Returns true if the current byte_position is at or past the end of buffer.
+    /// This doesn't account for partial byte reads.
+    ///
+    /// # Returns
+    /// true if at end, false if more data available
     pub fn is_at_end(&self) -> bool {
         self.byte_position >= self.buffer.len()
     }
 
-    /// Get current position (for debugging)
+    /// Get current read position (for debugging)
+    ///
+    /// Returns the current position as (byte_index, bit_index_within_byte).
+    ///
+    /// # Returns
+    /// Tuple of (byte_position, bit_position)
+    ///
+    /// # Example
+    /// ```
+    /// let mut reader = BitReader::new(&[0xFF]);
+    /// reader.read_bits(5).unwrap();
+    /// let (byte_pos, bit_pos) = reader.position();
+    /// assert_eq!(byte_pos, 0);
+    /// assert_eq!(bit_pos, 5);
+    /// ```
     pub fn position(&self) -> (usize, u8) {
         (self.byte_position, self.bit_position)
     }
