@@ -19,7 +19,7 @@ fn test_critical_point_count_overflow_detection() {
     let mut chunk = Chunk::new_active(1, 100);
 
     // Test at u32::MAX boundary
-    let max_u32 = u32::MAX as usize;
+    let _max_u32 = u32::MAX as usize;
 
     // Verify point_count doesn't silently truncate
     // (This test documents expected behavior, actual fix needed in code)

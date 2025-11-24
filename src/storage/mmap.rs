@@ -92,7 +92,12 @@ pub enum MmapAdvise {
 pub enum MmapError {
     /// Invalid magic number in header
     #[error("Invalid magic number: expected 0x{expected:08x}, got 0x{actual:08x}")]
-    InvalidMagic { expected: u32, actual: u32 },
+    InvalidMagic {
+        /// Expected magic number
+        expected: u32,
+        /// Actual magic number found
+        actual: u32
+    },
 
     /// Unsupported chunk version
     #[error("Unsupported version: {0} (max supported: {1})")]
@@ -100,23 +105,41 @@ pub enum MmapError {
 
     /// File size doesn't match header
     #[error("File size mismatch: expected {expected} bytes, got {actual} bytes")]
-    FileSizeMismatch { expected: u64, actual: u64 },
+    FileSizeMismatch {
+        /// Expected file size
+        expected: u64,
+        /// Actual file size
+        actual: u64
+    },
 
     /// Checksum verification failed
     #[error("Checksum mismatch: expected 0x{expected:016x}, got 0x{actual:016x}")]
-    ChecksumMismatch { expected: u64, actual: u64 },
+    ChecksumMismatch {
+        /// Expected checksum
+        expected: u64,
+        /// Actual checksum
+        actual: u64
+    },
 
     /// Access outside file bounds
     #[error("Access out of bounds: offset {offset} + length {length} > file size {file_size}")]
     OutOfBounds {
+        /// Access offset
         offset: usize,
+        /// Access length
         length: usize,
+        /// File size
         file_size: u64,
     },
 
     /// Chunk file too large
     #[error("Chunk file too large: {size} bytes (max: {max} bytes)")]
-    ChunkTooLarge { size: u64, max: u64 },
+    ChunkTooLarge {
+        /// Actual chunk size
+        size: u64,
+        /// Maximum allowed size
+        max: u64
+    },
 
     /// Empty chunk file
     #[error("Empty chunk (size < 64 bytes)")]
@@ -124,7 +147,12 @@ pub enum MmapError {
 
     /// Invalid time range
     #[error("Invalid time range: start {start} > end {end}")]
-    InvalidTimeRange { start: i64, end: i64 },
+    InvalidTimeRange {
+        /// Start timestamp
+        start: i64,
+        /// End timestamp
+        end: i64
+    },
 
     /// Invalid point count
     #[error("Invalid point count: {0} (must be 1-{MAX_POINTS})")]
@@ -508,7 +536,7 @@ unsafe impl Sync for MmapChunk {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::chunk::{Chunk, SealConfig};
+    use crate::storage::chunk::Chunk;
     use crate::types::DataPoint;
     use tempfile::TempDir;
 
