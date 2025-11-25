@@ -85,18 +85,18 @@ pub trait TimeIndex: Send + Sync + 'static {
 
 ### Current Implementation Status
 
-#### ✅ Completed (Phase 1)
+#### Completed (Phase 1)
 - Core data types and error handling
 - Pluggable engine traits
 - Bit-level I/O primitives
 - Complete Gorilla compression implementation
 - Comprehensive test suite
 
-#### 🚧 In Progress
+#### In Progress
 - LocalDiskEngine for storage
 - RedisTimeIndex for time-series indexing
 
-#### 📋 Planned
+####  Planned
 - Async ingestion pipeline
 - Query engine with aggregations
 - Background services (compaction, monitoring)
@@ -188,7 +188,7 @@ MIT License
 ## Status
 
 **Current Phase**: Foundation (Phase 1)
-**Progress**: 25% complete
+**Approximate Progress**: 35% complete
 **Next Milestone**: Storage layer implementation
 
 ---
