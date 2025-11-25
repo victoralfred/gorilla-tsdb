@@ -41,6 +41,8 @@
 pub mod active_chunk;
 /// Core chunk storage with lifecycle management
 pub mod chunk;
+/// Directory management utilities (metadata, locks, cleanup)
+pub mod directory;
 /// Local disk storage engine implementation
 pub mod local_disk;
 /// Memory-mapped chunk implementation for zero-copy reads
@@ -52,6 +54,7 @@ pub mod writer;
 
 pub use active_chunk::ActiveChunk;
 pub use chunk::*;
+pub use directory::{DirectoryMaintenance, SeriesMetadata, WriteLock};
 pub use local_disk::LocalDiskEngine;
 pub use mmap::MmapChunk;
 pub use reader::{ChunkReader, QueryOptions};
