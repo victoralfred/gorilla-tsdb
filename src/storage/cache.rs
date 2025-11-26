@@ -359,6 +359,137 @@ impl Default for LruList {
     }
 }
 
+/// Single shard of the cache
+///
+/// Each shard maintains its own:
+/// - HashMap for O(1) lookups
+/// - LRU list for eviction ordering
+/// - Lock for thread safety
+///
+/// Shards reduce lock contention by distributing entries across multiple independent units.
+pub struct CacheShard<T> {
+    /// Cached entries mapped by key
+    entries: parking_lot::RwLock<std::collections::HashMap<CacheKey, CacheEntry<T>>>,
+
+    /// LRU eviction ordering
+    lru: parking_lot::RwLock<LruList>,
+}
+
+impl<T: Clone> CacheShard<T> {
+    /// Create a new cache shard
+    pub fn new() -> Self {
+        Self {
+            entries: parking_lot::RwLock::new(std::collections::HashMap::new()),
+            lru: parking_lot::RwLock::new(LruList::new()),
+        }
+    }
+
+    /// Get an entry from the shard
+    ///
+    /// Updates access metadata and moves entry to MRU position.
+    /// Returns Arc clone (cheap - just bumps ref count).
+    pub fn get(&self, key: &CacheKey) -> Option<Arc<T>> {
+        // Read lock for lookup
+        let entries = self.entries.read();
+        let entry = entries.get(key)?;
+
+        // Update metadata
+        entry.metadata.record_access();
+
+        // Clone Arc (cheap - just increments ref count)
+        let data = entry.data.clone();
+
+        // Release read lock before acquiring write lock (avoid deadlock)
+        drop(entries);
+
+        // Update LRU ordering (requires write lock)
+        self.lru.write().touch(key);
+
+        Some(data)
+    }
+
+    /// Insert an entry into the shard
+    ///
+    /// Returns the old value if key already existed.
+    pub fn insert(&self, key: CacheKey, data: T, metadata: EntryMetadata) -> Option<CacheEntry<T>> {
+        let entry = CacheEntry {
+            data: Arc::new(data),
+            metadata,
+        };
+
+        // Insert into map
+        let mut entries = self.entries.write();
+        let old = entries.insert(key.clone(), entry);
+        drop(entries);
+
+        // Update LRU
+        self.lru.write().push_back(key);
+
+        old
+    }
+
+    /// Remove an entry from the shard
+    ///
+    /// Returns the removed entry if it existed.
+    pub fn remove(&self, key: &CacheKey) -> Option<CacheEntry<T>> {
+        // Remove from map
+        let mut entries = self.entries.write();
+        let entry = entries.remove(key);
+        drop(entries);
+
+        // Remove from LRU
+        self.lru.write().remove(key);
+
+        entry
+    }
+
+    /// Pop the least recently used entry
+    ///
+    /// Used for eviction.
+    pub fn pop_lru(&self) -> Option<(CacheKey, CacheEntry<T>)> {
+        // Get LRU key
+        let mut lru = self.lru.write();
+        let key = lru.pop_front()?;
+        drop(lru);
+
+        // Remove from map
+        let mut entries = self.entries.write();
+        let entry = entries.remove(&key)?;
+
+        Some((key, entry))
+    }
+
+    /// Get current entry count
+    pub fn len(&self) -> usize {
+        self.entries.read().len()
+    }
+
+    /// Check if shard is empty
+    pub fn is_empty(&self) -> bool {
+        self.entries.read().is_empty()
+    }
+
+    /// Clear all entries
+    pub fn clear(&self) {
+        self.entries.write().clear();
+        self.lru.write().clear();
+    }
+
+    /// Get all keys (snapshot)
+    ///
+    /// Returns a Vec of all keys currently in the shard.
+    /// This is a point-in-time snapshot.
+    pub fn keys(&self) -> Vec<CacheKey> {
+        self.entries.read().keys().cloned().collect()
+    }
+}
+
+impl<T: Clone> Default for CacheShard<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -553,5 +684,95 @@ mod tests {
         assert!(lru.is_empty());
         assert_eq!(lru.len(), 0);
         assert_eq!(lru.pop_front(), None);
+    }
+
+    // CacheShard tests
+    #[test]
+    fn test_cache_shard_insert_get() {
+        let shard: CacheShard<Vec<u8>> = CacheShard::new();
+        let key = CacheKey::new(1, 100);
+        let data = vec![1, 2, 3, 4];
+        let metadata = EntryMetadata::new(4, 0);
+
+        assert!(shard.is_empty());
+
+        shard.insert(key.clone(), data.clone(), metadata);
+        assert_eq!(shard.len(), 1);
+
+        let retrieved = shard.get(&key).unwrap();
+        assert_eq!(*retrieved, data);
+    }
+
+    #[test]
+    fn test_cache_shard_remove() {
+        let shard: CacheShard<Vec<u8>> = CacheShard::new();
+        let key = CacheKey::new(1, 100);
+        let data = vec![1, 2, 3, 4];
+        let metadata = EntryMetadata::new(4, 0);
+
+        shard.insert(key.clone(), data.clone(), metadata);
+        assert_eq!(shard.len(), 1);
+
+        let removed = shard.remove(&key);
+        assert!(removed.is_some());
+        assert_eq!(shard.len(), 0);
+
+        // Second remove should return None
+        assert!(shard.remove(&key).is_none());
+    }
+
+    #[test]
+    fn test_cache_shard_pop_lru() {
+        let shard: CacheShard<Vec<u8>> = CacheShard::new();
+
+        let key1 = CacheKey::new(1, 100);
+        let key2 = CacheKey::new(1, 200);
+        let key3 = CacheKey::new(1, 300);
+
+        shard.insert(key1.clone(), vec![1], EntryMetadata::new(1, 0));
+        shard.insert(key2.clone(), vec![2], EntryMetadata::new(1, 0));
+        shard.insert(key3.clone(), vec![3], EntryMetadata::new(1, 0));
+
+        // Pop should return LRU (first inserted)
+        let (popped_key, _) = shard.pop_lru().unwrap();
+        assert_eq!(popped_key, key1);
+        assert_eq!(shard.len(), 2);
+
+        // Next pop should return second inserted
+        let (popped_key, _) = shard.pop_lru().unwrap();
+        assert_eq!(popped_key, key2);
+        assert_eq!(shard.len(), 1);
+    }
+
+    #[test]
+    fn test_cache_shard_clear() {
+        let shard: CacheShard<Vec<u8>> = CacheShard::new();
+
+        shard.insert(CacheKey::new(1, 100), vec![1], EntryMetadata::new(1, 0));
+        shard.insert(CacheKey::new(1, 200), vec![2], EntryMetadata::new(1, 0));
+
+        assert_eq!(shard.len(), 2);
+
+        shard.clear();
+        assert!(shard.is_empty());
+        assert_eq!(shard.len(), 0);
+    }
+
+    #[test]
+    fn test_cache_shard_access_updates_lru() {
+        let shard: CacheShard<Vec<u8>> = CacheShard::new();
+
+        let key1 = CacheKey::new(1, 100);
+        let key2 = CacheKey::new(1, 200);
+
+        shard.insert(key1.clone(), vec![1], EntryMetadata::new(1, 0));
+        shard.insert(key2.clone(), vec![2], EntryMetadata::new(1, 0));
+
+        // Access key1 (should move to MRU)
+        shard.get(&key1);
+
+        // Pop LRU should now return key2
+        let (popped_key, _) = shard.pop_lru().unwrap();
+        assert_eq!(popped_key, key2);
     }
 }
