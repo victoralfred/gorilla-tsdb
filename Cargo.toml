@@ -71,6 +71,9 @@ governor = "0.10.2"
 # Configuration
 toml = "0.9.8"
 
+# Dependencues
+protobuf = "4.33.1-release"
+
 [dev-dependencies]
 criterion = "0.7.0"
 proptest = "1.0"
