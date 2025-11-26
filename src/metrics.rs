@@ -40,6 +40,13 @@ lazy_static! {
         &["status"]
     ).unwrap();
 
+    /// Total compressions (background compression service)
+    pub static ref COMPRESSIONS_TOTAL: CounterVec = register_counter_vec!(
+        "tsdb_compressions_total",
+        "Total background compress operations",
+        &["status"]
+    ).unwrap();
+
     // === Latency Histograms ===
 
     /// Write operation duration

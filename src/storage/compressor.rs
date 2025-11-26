@@ -71,6 +71,9 @@ pub struct CompressionConfig {
     /// Compression level (0-9, where 0 is fastest, 9 is best compression)
     /// Note: Snappy doesn't support levels, this is for future extensibility
     pub compression_level: u8,
+
+    /// Delete original .gor files after successful compression
+    pub delete_original: bool,
 }
 
 impl Default for CompressionConfig {
@@ -82,6 +85,7 @@ impl Default for CompressionConfig {
             max_chunks_per_scan: 100,
             enabled: true,
             compression_level: 0,
+            delete_original: true, // Delete originals by default to save disk space
         }
     }
 }
@@ -225,9 +229,10 @@ impl CompressionService {
         for worker_id in 0..self.config.worker_count {
             let task_rx = Arc::clone(&self.task_rx);
             let stats = Arc::clone(&self.stats);
+            let delete_original = self.config.delete_original;
 
             let worker = tokio::spawn(async move {
-                Self::worker_loop(worker_id, task_rx, stats).await;
+                Self::worker_loop(worker_id, task_rx, stats, delete_original).await;
             });
 
             workers.push(worker);
@@ -265,25 +270,24 @@ impl CompressionService {
         worker_id: usize,
         task_rx: Arc<RwLock<mpsc::UnboundedReceiver<CompressionTask>>>,
         stats: Arc<RwLock<CompressionStats>>,
+        delete_original: bool,
     ) {
         loop {
-            // Try to receive a task
-            let task = {
-                let mut rx = task_rx.write().await;
-                rx.recv().await
-            };
+            // Try to receive a task - lock is released immediately after recv
+            let task = task_rx.write().await.recv().await;
 
             match task {
                 Some(task) => {
-                    // Update processing count
+                    // Update processing and pending counts
                     {
                         let mut stats = stats.write().await;
                         stats.processing_count += 1;
+                        stats.pending_count = stats.pending_count.saturating_sub(1);
                     }
 
                     // Compress the chunk
                     let start = std::time::Instant::now();
-                    match Self::compress_chunk(&task).await {
+                    match Self::compress_chunk(&task, delete_original).await {
                         Ok(compressed_size) => {
                             let duration = start.elapsed().as_secs_f64();
 
@@ -296,7 +300,7 @@ impl CompressionService {
                             stats.processing_count -= 1;
 
                             // Record metrics
-                            crate::metrics::DECOMPRESSIONS_TOTAL
+                            crate::metrics::COMPRESSIONS_TOTAL
                                 .with_label_values(&["success"])
                                 .inc();
 
@@ -314,7 +318,7 @@ impl CompressionService {
                             stats.chunks_failed += 1;
                             stats.processing_count -= 1;
 
-                            crate::metrics::DECOMPRESSIONS_TOTAL
+                            crate::metrics::COMPRESSIONS_TOTAL
                                 .with_label_values(&["failure"])
                                 .inc();
 
@@ -466,7 +470,10 @@ impl CompressionService {
     }
 
     /// Compress a single chunk file
-    async fn compress_chunk(task: &CompressionTask) -> Result<u64, StorageError> {
+    async fn compress_chunk(
+        task: &CompressionTask,
+        delete_original: bool,
+    ) -> Result<u64, StorageError> {
         // Read the chunk file
         let data = fs::read(&task.chunk_path).await?;
 
@@ -484,9 +491,10 @@ impl CompressionService {
         let snappy_path = task.chunk_path.with_extension("snappy");
         fs::write(&snappy_path, &compressed).await?;
 
-        // Optionally delete original .gor file to save space
-        // For safety, we keep both for now
-        // fs::remove_file(&task.chunk_path).await?;
+        // Delete original .gor file to save disk space (if configured)
+        if delete_original {
+            fs::remove_file(&task.chunk_path).await?;
+        }
 
         Ok(compressed.len() as u64)
     }
@@ -602,7 +610,7 @@ mod tests {
             created_at: SystemTime::now(),
         };
 
-        let compressed_size = CompressionService::compress_chunk(&task).await.unwrap();
+        let compressed_size = CompressionService::compress_chunk(&task, false).await.unwrap();
 
         // Verify compressed file exists
         let snappy_path = chunk_path.with_extension("snappy");
