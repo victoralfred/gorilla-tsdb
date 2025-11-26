@@ -136,39 +136,65 @@ impl EntryMetadata {
     }
 
     /// Record an access to this entry
+    ///
+    /// # Memory Ordering
+    ///
+    /// Uses `Relaxed` ordering for performance. This is safe because:
+    /// - Metadata is used for **eviction heuristics**, not correctness
+    /// - Slight inconsistency across threads is acceptable
+    /// - No critical happens-before relationships between different atomics
+    /// - Avoiding memory barriers significantly improves hot path performance
     pub fn record_access(&self) {
         self.access_count.fetch_add(1, Ordering::Relaxed);
 
         let now_micros = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_else(|_| std::time::Duration::from_secs(0))
             .as_micros() as u64;
 
         self.last_access.store(now_micros, Ordering::Relaxed);
     }
 
     /// Get seconds since last access
+    ///
+    /// Returns 0 if system time issues occur.
+    ///
+    /// # Memory Ordering
+    ///
+    /// Uses `Relaxed` ordering - see [`record_access`] for rationale.
     pub fn seconds_since_access(&self) -> u64 {
         let now_micros = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_else(|_| std::time::Duration::from_secs(0))
             .as_micros() as u64;
 
         let last = self.last_access.load(Ordering::Relaxed);
-        (now_micros - last) / 1_000_000
+        now_micros.saturating_sub(last) / 1_000_000
     }
 
     /// Get current access count
+    ///
+    /// # Memory Ordering
+    ///
+    /// Uses `Relaxed` ordering - see [`record_access`] for rationale.
     pub fn access_count(&self) -> u64 {
         self.access_count.load(Ordering::Relaxed)
     }
 
     /// Get current priority
+    ///
+    /// # Memory Ordering
+    ///
+    /// Uses `Relaxed` ordering - see [`record_access`] for rationale.
     pub fn priority(&self) -> i32 {
         self.priority.load(Ordering::Relaxed)
     }
 
-    /// Set priority
+    /// Set priority for eviction decisions
+    ///
+    /// # Memory Ordering
+    ///
+    /// Uses `Relaxed` ordering - see [`record_access`] for rationale.
     pub fn set_priority(&self, priority: i32) {
         self.priority.store(priority, Ordering::Relaxed);
     }
@@ -186,11 +212,36 @@ pub struct CacheEntry<T> {
 
 impl<T> CacheEntry<T> {
     /// Create a new cache entry
+    ///
+    /// # Parameters
+    ///
+    /// - `data`: The cached data wrapped in Arc
+    /// - `size_bytes`: Size in bytes for memory accounting (should include heap allocations)
+    /// - `chunk_age_seconds`: Age of the chunk for eviction priority
+    ///
+    /// # Debug Assertions
+    ///
+    /// In debug builds, validates that `size_bytes` is at least `size_of::<T>()`.
+    /// This helps catch incorrect size calculations during development.
     pub fn new(data: Arc<T>, size_bytes: usize, chunk_age_seconds: u64) -> Self {
+        // Validate size in debug builds
+        debug_assert!(
+            size_bytes >= std::mem::size_of::<T>(),
+            "size_bytes ({}) should be at least the base size of T ({} bytes). \
+             Did you forget to account for heap allocations?",
+            size_bytes,
+            std::mem::size_of::<T>()
+        );
+
         Self {
             data,
             metadata: EntryMetadata::new(size_bytes, chunk_age_seconds),
         }
+    }
+
+    /// Get the size in bytes for this entry
+    pub fn size_bytes(&self) -> usize {
+        self.metadata.size_bytes
     }
 }
 
@@ -269,8 +320,18 @@ impl MemoryTracker {
     }
 
     /// Get per-shard memory usage
+    ///
+    /// Returns 0 if `shard_id` is out of bounds.
+    ///
+    /// # Memory Ordering
+    ///
+    /// Uses `Relaxed` ordering for performance - see [`EntryMetadata::record_access`]
+    /// for rationale on Relaxed ordering in cache metadata.
     pub fn shard_bytes(&self, shard_id: usize) -> usize {
-        self.per_shard_bytes[shard_id].load(Ordering::Relaxed)
+        self.per_shard_bytes
+            .get(shard_id)
+            .map(|atomic| atomic.load(Ordering::Relaxed))
+            .unwrap_or(0)
     }
 }
 
@@ -774,5 +835,38 @@ mod tests {
         // Pop LRU should now return key2
         let (popped_key, _) = shard.pop_lru().unwrap();
         assert_eq!(popped_key, key2);
+    }
+
+    // P1 Issue tests
+    #[test]
+    fn test_memory_tracker_shard_bytes_bounds_check() {
+        let tracker = MemoryTracker::new(1024, 4);
+
+        tracker.on_insert(0, 100);
+        assert_eq!(tracker.shard_bytes(0), 100);
+
+        // Out of bounds should return 0 instead of panicking
+        assert_eq!(tracker.shard_bytes(10), 0);
+        assert_eq!(tracker.shard_bytes(100), 0);
+    }
+
+    #[test]
+    fn test_entry_metadata_time_handling() {
+        let metadata = EntryMetadata::new(1024, 0);
+
+        // Record access
+        metadata.record_access();
+
+        // Should not panic even if accessed immediately
+        let seconds = metadata.seconds_since_access();
+        assert!(seconds < 2); // Should be very recent
+    }
+
+    #[test]
+    fn test_cache_entry_size_bytes() {
+        let data = vec![1, 2, 3, 4];
+        let entry = CacheEntry::new(Arc::new(data), 100, 0);
+
+        assert_eq!(entry.size_bytes(), 100);
     }
 }
