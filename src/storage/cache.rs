@@ -33,24 +33,28 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use gorilla_tsdb::storage::cache::{CacheManager, CacheConfig};
+//! use gorilla_tsdb::storage::cache::{CacheManager, CacheConfig, CacheKey};
 //! use std::sync::Arc;
 //!
-//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! # #[tokio::main]
+//! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // Create cache with default config
 //! let config = CacheConfig::default();
-//! let cache = Arc::new(CacheManager::new(config));
+//! let cache = Arc::new(CacheManager::<Vec<u8>>::new(config));
 //!
 //! // Start background eviction
-//! cache.start().await?;
+//! cache.start_background_eviction().await?;
 //!
 //! // Cache operations
-//! let key = CacheKey::new(series_id, chunk_id);
-//! cache.insert(key.clone(), data).await;
-//! let cached = cache.get(&key).await;
+//! let key = CacheKey::new(1, 12345);
+//! let data = vec![1, 2, 3, 4];
+//! cache.insert(key.clone(), data, 4, 0);
+//! let cached = cache.get(&key);
 //!
 //! // Get statistics
-//! let stats = cache.stats().await;
-//! println!("Hit rate: {:.2}%", stats.hit_rate() * 100.0);
+//! if let Some(stats) = cache.stats() {
+//!     println!("Hit rate: {:.2}%", stats.hit_rate() * 100.0);
+//! }
 //! # Ok(())
 //! # }
 //! ```
