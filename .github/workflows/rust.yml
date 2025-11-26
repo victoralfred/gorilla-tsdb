@@ -14,7 +14,7 @@ env:
 jobs:
   # 1. Check Standard Quality & Security
   lint-and-format:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
       - name: Install stable Rust toolchain
