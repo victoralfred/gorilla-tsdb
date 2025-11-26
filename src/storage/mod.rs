@@ -80,6 +80,33 @@ pub mod security {
             if path_str.contains('\0') {
                 return Err("Path contains null bytes".to_string());
             }
+
+            // Windows-specific validation: Check for drive letter traversal
+            #[cfg(windows)]
+            {
+                // Detect attempts to traverse to different drives (e.g., C:, D:)
+                if path_str.len() >= 2 && path_str.chars().nth(1) == Some(':') {
+                    // This is an absolute path with drive letter
+                    let path_drive = path_str.chars().nth(0).unwrap().to_ascii_uppercase();
+
+                    if let Some(base_str) = base_dir.to_str() {
+                        if base_str.len() >= 2 && base_str.chars().nth(1) == Some(':') {
+                            let base_drive = base_str.chars().nth(0).unwrap().to_ascii_uppercase();
+                            if path_drive != base_drive {
+                                return Err(format!(
+                                    "Path attempts to traverse to different drive: {} vs {}",
+                                    path_drive, base_drive
+                                ));
+                            }
+                        }
+                    }
+                }
+
+                // Also check for UNC paths (\\server\share)
+                if path_str.starts_with("\\\\") || path_str.starts_with("//") {
+                    return Err("UNC paths are not allowed".to_string());
+                }
+            }
         }
 
         // Normalize and check that path is within base_dir
