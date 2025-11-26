@@ -551,6 +551,236 @@ impl<T: Clone> Default for CacheShard<T> {
     }
 }
 
+/// Cache configuration
+#[derive(Debug, Clone)]
+pub struct CacheConfig {
+    /// Maximum cache size in bytes
+    pub max_size_bytes: usize,
+
+    /// Number of shards for concurrency (16-32 recommended)
+    pub num_shards: usize,
+
+    /// Low watermark (70% - start background eviction)
+    pub low_watermark: f64,
+
+    /// High watermark (90% - aggressive eviction)
+    pub high_watermark: f64,
+
+    /// Critical watermark (95% - emergency measures)
+    pub critical_watermark: f64,
+
+    /// Background eviction interval in seconds
+    pub eviction_interval_secs: u64,
+
+    /// Enable cache statistics tracking
+    pub enable_stats: bool,
+
+    /// Enable prefetching for sequential access
+    pub enable_prefetch: bool,
+
+    /// Prefetch window size (number of chunks to prefetch)
+    pub prefetch_window: usize,
+}
+
+impl Default for CacheConfig {
+    fn default() -> Self {
+        Self {
+            // Default to 256MB cache
+            max_size_bytes: 256 * 1024 * 1024,
+            // 16 shards for good concurrency
+            num_shards: 16,
+            // Standard watermarks
+            low_watermark: 0.70,
+            high_watermark: 0.90,
+            critical_watermark: 0.95,
+            // Evict every 5 seconds
+            eviction_interval_secs: 5,
+            // Enable stats by default
+            enable_stats: true,
+            // Disable prefetch by default
+            enable_prefetch: false,
+            prefetch_window: 3,
+        }
+    }
+}
+
+impl CacheConfig {
+    /// Create a new cache configuration
+    pub fn new(max_size_bytes: usize) -> Self {
+        Self {
+            max_size_bytes,
+            ..Default::default()
+        }
+    }
+
+    /// Set the number of shards
+    pub fn with_shards(mut self, num_shards: usize) -> Self {
+        assert!(num_shards > 0, "num_shards must be > 0");
+        self.num_shards = num_shards;
+        self
+    }
+
+    /// Set watermarks for memory pressure handling
+    pub fn with_watermarks(mut self, low: f64, high: f64, critical: f64) -> Self {
+        assert!(low > 0.0 && low < 1.0, "low_watermark must be 0.0-1.0");
+        assert!(high > low && high < 1.0, "high_watermark must be > low and < 1.0");
+        assert!(
+            critical > high && critical < 1.0,
+            "critical_watermark must be > high and < 1.0"
+        );
+        self.low_watermark = low;
+        self.high_watermark = high;
+        self.critical_watermark = critical;
+        self
+    }
+
+    /// Enable prefetching for sequential access patterns
+    pub fn with_prefetch(mut self, enabled: bool, window_size: usize) -> Self {
+        self.enable_prefetch = enabled;
+        self.prefetch_window = window_size;
+        self
+    }
+
+    /// Get the low watermark threshold in bytes
+    pub fn low_watermark_bytes(&self) -> usize {
+        (self.max_size_bytes as f64 * self.low_watermark) as usize
+    }
+
+    /// Get the high watermark threshold in bytes
+    pub fn high_watermark_bytes(&self) -> usize {
+        (self.max_size_bytes as f64 * self.high_watermark) as usize
+    }
+
+    /// Get the critical watermark threshold in bytes
+    pub fn critical_watermark_bytes(&self) -> usize {
+        (self.max_size_bytes as f64 * self.critical_watermark) as usize
+    }
+}
+
+/// Cache statistics
+#[derive(Debug, Default)]
+pub struct CacheStats {
+    /// Total cache hits
+    pub hits: AtomicU64,
+
+    /// Total cache misses
+    pub misses: AtomicU64,
+
+    /// Total insertions
+    pub insertions: AtomicU64,
+
+    /// Total evictions
+    pub evictions: AtomicU64,
+
+    /// Current number of entries
+    pub entry_count: AtomicUsize,
+
+    /// Current memory usage in bytes
+    pub current_bytes: AtomicUsize,
+
+    /// Peak memory usage in bytes
+    pub peak_bytes: AtomicUsize,
+
+    /// Total bytes inserted (for throughput calculation)
+    pub bytes_inserted: AtomicU64,
+
+    /// Total bytes evicted
+    pub bytes_evicted: AtomicU64,
+}
+
+impl CacheStats {
+    /// Create new cache statistics
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Record a cache hit
+    pub fn record_hit(&self) {
+        self.hits.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Record a cache miss
+    pub fn record_miss(&self) {
+        self.misses.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Record an insertion
+    pub fn record_insertion(&self, size_bytes: usize) {
+        self.insertions.fetch_add(1, Ordering::Relaxed);
+        self.entry_count.fetch_add(1, Ordering::Relaxed);
+        self.bytes_inserted
+            .fetch_add(size_bytes as u64, Ordering::Relaxed);
+
+        // Update current and peak bytes
+        let new_size = self.current_bytes.fetch_add(size_bytes, Ordering::Relaxed) + size_bytes;
+        self.peak_bytes.fetch_max(new_size, Ordering::Relaxed);
+    }
+
+    /// Record an eviction
+    pub fn record_eviction(&self, size_bytes: usize) {
+        self.evictions.fetch_add(1, Ordering::Relaxed);
+        self.entry_count.fetch_sub(1, Ordering::Relaxed);
+        self.current_bytes
+            .fetch_sub(size_bytes, Ordering::Relaxed);
+        self.bytes_evicted
+            .fetch_add(size_bytes as u64, Ordering::Relaxed);
+    }
+
+    /// Calculate hit rate (0.0 to 1.0)
+    pub fn hit_rate(&self) -> f64 {
+        let hits = self.hits.load(Ordering::Relaxed);
+        let misses = self.misses.load(Ordering::Relaxed);
+        let total = hits + misses;
+
+        if total == 0 {
+            0.0
+        } else {
+            hits as f64 / total as f64
+        }
+    }
+
+    /// Get current memory usage
+    pub fn current_bytes(&self) -> usize {
+        self.current_bytes.load(Ordering::Relaxed)
+    }
+
+    /// Get peak memory usage
+    pub fn peak_bytes(&self) -> usize {
+        self.peak_bytes.load(Ordering::Relaxed)
+    }
+
+    /// Get current entry count
+    pub fn entry_count(&self) -> usize {
+        self.entry_count.load(Ordering::Relaxed)
+    }
+
+    /// Get total hits
+    pub fn hits(&self) -> u64 {
+        self.hits.load(Ordering::Relaxed)
+    }
+
+    /// Get total misses
+    pub fn misses(&self) -> u64 {
+        self.misses.load(Ordering::Relaxed)
+    }
+
+    /// Get total evictions
+    pub fn evictions(&self) -> u64 {
+        self.evictions.load(Ordering::Relaxed)
+    }
+
+    /// Reset all statistics
+    pub fn reset(&self) {
+        self.hits.store(0, Ordering::Relaxed);
+        self.misses.store(0, Ordering::Relaxed);
+        self.insertions.store(0, Ordering::Relaxed);
+        self.evictions.store(0, Ordering::Relaxed);
+        // Don't reset current_bytes, entry_count, or peak_bytes
+        self.bytes_inserted.store(0, Ordering::Relaxed);
+        self.bytes_evicted.store(0, Ordering::Relaxed);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -868,5 +1098,108 @@ mod tests {
         let entry = CacheEntry::new(Arc::new(data), 100, 0);
 
         assert_eq!(entry.size_bytes(), 100);
+    }
+
+    // CacheConfig tests
+    #[test]
+    fn test_cache_config_defaults() {
+        let config = CacheConfig::default();
+
+        assert_eq!(config.max_size_bytes, 256 * 1024 * 1024);
+        assert_eq!(config.num_shards, 16);
+        assert_eq!(config.low_watermark, 0.70);
+        assert_eq!(config.high_watermark, 0.90);
+        assert_eq!(config.critical_watermark, 0.95);
+    }
+
+    #[test]
+    fn test_cache_config_builder() {
+        let config = CacheConfig::new(1024 * 1024)
+            .with_shards(32)
+            .with_watermarks(0.6, 0.8, 0.9)
+            .with_prefetch(true, 5);
+
+        assert_eq!(config.max_size_bytes, 1024 * 1024);
+        assert_eq!(config.num_shards, 32);
+        assert_eq!(config.low_watermark, 0.6);
+        assert_eq!(config.high_watermark, 0.8);
+        assert_eq!(config.critical_watermark, 0.9);
+        assert!(config.enable_prefetch);
+        assert_eq!(config.prefetch_window, 5);
+    }
+
+    #[test]
+    fn test_cache_config_watermark_bytes() {
+        let config = CacheConfig::new(1000);
+
+        assert_eq!(config.low_watermark_bytes(), 700);
+        assert_eq!(config.high_watermark_bytes(), 900);
+        assert_eq!(config.critical_watermark_bytes(), 950);
+    }
+
+    // CacheStats tests
+    #[test]
+    fn test_cache_stats_hit_rate() {
+        let stats = CacheStats::new();
+
+        // Empty stats should have 0.0 hit rate
+        assert_eq!(stats.hit_rate(), 0.0);
+
+        // Record some hits and misses
+        stats.record_hit();
+        stats.record_hit();
+        stats.record_hit();
+        stats.record_miss();
+
+        // 3 hits / 4 total = 0.75
+        assert_eq!(stats.hit_rate(), 0.75);
+    }
+
+    #[test]
+    fn test_cache_stats_insertion_eviction() {
+        let stats = CacheStats::new();
+
+        stats.record_insertion(100);
+        stats.record_insertion(200);
+        assert_eq!(stats.entry_count(), 2);
+        assert_eq!(stats.current_bytes(), 300);
+
+        stats.record_eviction(100);
+        assert_eq!(stats.entry_count(), 1);
+        assert_eq!(stats.current_bytes(), 200);
+        assert_eq!(stats.evictions(), 1);
+    }
+
+    #[test]
+    fn test_cache_stats_peak_tracking() {
+        let stats = CacheStats::new();
+
+        stats.record_insertion(500);
+        assert_eq!(stats.peak_bytes(), 500);
+
+        stats.record_insertion(300);
+        assert_eq!(stats.peak_bytes(), 800);
+
+        // Eviction shouldn't change peak
+        stats.record_eviction(400);
+        assert_eq!(stats.current_bytes(), 400);
+        assert_eq!(stats.peak_bytes(), 800);
+    }
+
+    #[test]
+    fn test_cache_stats_reset() {
+        let stats = CacheStats::new();
+
+        stats.record_hit();
+        stats.record_miss();
+        stats.record_insertion(100);
+
+        stats.reset();
+
+        assert_eq!(stats.hits(), 0);
+        assert_eq!(stats.misses(), 0);
+        // Entry count and current_bytes should NOT be reset
+        assert_eq!(stats.entry_count(), 1);
+        assert_eq!(stats.current_bytes(), 100);
     }
 }
