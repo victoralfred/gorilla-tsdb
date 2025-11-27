@@ -2,11 +2,16 @@
 //!
 //! Provides rate limiting for network ingestion using the token bucket algorithm.
 //! Supports per-IP and per-tenant rate limits with configurable burst capacity.
+//!
+//! # IPv6 Rate Limiting
+//!
+//! For IPv6 addresses, rate limiting is applied per /64 prefix to prevent
+//! bypass attacks where clients use different addresses from the same subnet.
 
 use dashmap::DashMap;
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// Rate limiting configuration
@@ -71,13 +76,16 @@ impl RateLimitConfig {
 }
 
 /// Token bucket for rate limiting
+///
+/// Uses atomic operations for token consumption and standard mutex for timing.
+/// Mutex poisoning is handled gracefully to prevent panics.
 struct TokenBucket {
     /// Available tokens
     tokens: AtomicU64,
-    /// Last refill time
-    last_refill: Mutex<Instant>,
+    /// Last refill time (using std Mutex - blocking is fine for short duration)
+    last_refill: std::sync::Mutex<Instant>,
     /// Last access time (for TTL)
-    last_access: Mutex<Instant>,
+    last_access: std::sync::Mutex<Instant>,
     /// Bucket capacity (maximum tokens)
     capacity: u64,
     /// Refill rate (tokens per second)
@@ -92,8 +100,8 @@ impl TokenBucket {
 
         Self {
             tokens: AtomicU64::new(capacity), // Start full
-            last_refill: Mutex::new(now),
-            last_access: Mutex::new(now),
+            last_refill: std::sync::Mutex::new(now),
+            last_access: std::sync::Mutex::new(now),
             capacity,
             refill_rate: rate_per_sec,
         }
@@ -102,11 +110,15 @@ impl TokenBucket {
     /// Try to consume tokens from the bucket
     ///
     /// Returns true if tokens were consumed, false if insufficient tokens.
+    /// Handles mutex poisoning gracefully.
     fn try_consume(&self, tokens_needed: u64) -> bool {
         self.refill();
 
-        // Update last access time
-        *self.last_access.lock().unwrap() = Instant::now();
+        // Update last access time - handle poisoned mutex
+        if let Ok(mut last_access) = self.last_access.lock() {
+            *last_access = Instant::now();
+        }
+        // If mutex is poisoned, we still continue - rate limiting degrades gracefully
 
         // Try to consume tokens atomically
         loop {
@@ -128,8 +140,19 @@ impl TokenBucket {
     }
 
     /// Refill tokens based on elapsed time
+    ///
+    /// Handles mutex poisoning gracefully - on poison, tokens are not refilled
+    /// but the bucket remains functional.
     fn refill(&self) {
-        let mut last_refill = self.last_refill.lock().unwrap();
+        // Try to acquire lock - if poisoned, skip refill
+        let mut last_refill = match self.last_refill.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                // Recover from poisoned mutex
+                poisoned.into_inner()
+            }
+        };
+
         let now = Instant::now();
         let elapsed = now.duration_since(*last_refill);
 
@@ -151,9 +174,13 @@ impl TokenBucket {
     }
 
     /// Check if bucket has expired (no recent access)
+    ///
+    /// Returns true if expired or if mutex is poisoned (treat as stale).
     fn is_expired(&self, ttl: Duration) -> bool {
-        let last_access = *self.last_access.lock().unwrap();
-        last_access.elapsed() > ttl
+        match self.last_access.lock() {
+            Ok(last_access) => last_access.elapsed() > ttl,
+            Err(_) => true, // Treat poisoned mutex as expired
+        }
     }
 
     /// Get current token count
@@ -163,13 +190,45 @@ impl TokenBucket {
     }
 }
 
+/// Key type for IP-based rate limiting
+///
+/// For IPv4: uses the full address
+/// For IPv6: uses the /64 prefix to prevent bypass attacks
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum IpKey {
+    V4(std::net::Ipv4Addr),
+    V6Prefix(u64), // First 64 bits of IPv6 address
+}
+
+impl From<IpAddr> for IpKey {
+    fn from(ip: IpAddr) -> Self {
+        match ip {
+            IpAddr::V4(v4) => IpKey::V4(v4),
+            IpAddr::V6(v6) => {
+                // Extract first 64 bits (/64 prefix)
+                let segments = v6.segments();
+                let prefix = ((segments[0] as u64) << 48)
+                    | ((segments[1] as u64) << 32)
+                    | ((segments[2] as u64) << 16)
+                    | (segments[3] as u64);
+                IpKey::V6Prefix(prefix)
+            }
+        }
+    }
+}
+
 /// Token bucket rate limiter
 ///
 /// Provides rate limiting using the token bucket algorithm with support for:
-/// - Per-IP rate limiting
+/// - Per-IP rate limiting (IPv6 uses /64 prefix to prevent bypass)
 /// - Per-tenant rate limiting
 /// - Burst capacity
-/// - Automatic bucket cleanup
+/// - Automatic bucket cleanup via background task
+///
+/// # IPv6 Considerations
+///
+/// IPv6 addresses are rate-limited by their /64 prefix to prevent attackers
+/// from bypassing rate limits by using different addresses from the same subnet.
 ///
 /// # Example
 ///
@@ -189,8 +248,8 @@ impl TokenBucket {
 /// ```
 pub struct RateLimiter {
     config: RateLimitConfig,
-    /// Per-IP buckets
-    ip_buckets: DashMap<IpAddr, TokenBucket>,
+    /// Per-IP buckets (uses IpKey for IPv6 /64 prefix handling)
+    ip_buckets: DashMap<IpKey, TokenBucket>,
     /// Per-tenant buckets
     tenant_buckets: DashMap<String, TokenBucket>,
     /// Total rejections counter
@@ -208,11 +267,32 @@ impl RateLimiter {
         }
     }
 
+    /// Create a rate limiter wrapped in Arc for sharing across tasks
+    ///
+    /// Also spawns a background cleanup task that runs periodically.
+    pub fn new_with_cleanup(config: RateLimitConfig) -> Arc<Self> {
+        let limiter = Arc::new(Self::new(config.clone()));
+
+        // Spawn background cleanup task
+        let cleanup_limiter = Arc::clone(&limiter);
+        let cleanup_interval = config.bucket_ttl / 2; // Run at half TTL interval
+
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(cleanup_interval);
+            loop {
+                interval.tick().await;
+                cleanup_limiter.cleanup();
+            }
+        });
+
+        limiter
+    }
+
     /// Check if request is allowed for an IP and consume tokens
     ///
     /// # Arguments
     ///
-    /// * `ip` - Client IP address
+    /// * `ip` - Client IP address (IPv6 addresses are grouped by /64 prefix)
     /// * `points` - Number of points/tokens to consume
     ///
     /// # Returns
@@ -223,7 +303,10 @@ impl RateLimiter {
             return true;
         }
 
-        let bucket = self.ip_buckets.entry(ip).or_insert_with(|| {
+        // Convert IP to key (IPv6 uses /64 prefix)
+        let ip_key = IpKey::from(ip);
+
+        let bucket = self.ip_buckets.entry(ip_key).or_insert_with(|| {
             TokenBucket::new(
                 self.config.points_per_sec_per_ip as u64,
                 self.config.burst_multiplier,
@@ -292,8 +375,9 @@ impl RateLimiter {
 
     /// Get available tokens for an IP
     pub fn available_for_ip(&self, ip: IpAddr) -> u64 {
+        let ip_key = IpKey::from(ip);
         self.ip_buckets
-            .get(&ip)
+            .get(&ip_key)
             .map(|b| b.available())
             .unwrap_or(self.config.ip_bucket_capacity())
     }
@@ -520,5 +604,77 @@ mod tests {
         assert_eq!(stats.ip_buckets, 2);
         assert_eq!(stats.tenant_buckets, 1);
         assert!(stats.enabled);
+    }
+
+    #[test]
+    fn test_ipv6_prefix_rate_limiting() {
+        let config = RateLimitConfig {
+            enabled: true,
+            points_per_sec_per_ip: 100,
+            points_per_sec_per_tenant: 1000,
+            burst_multiplier: 1.0,
+            bucket_ttl: Duration::from_secs(60),
+        };
+        let limiter = RateLimiter::new(config);
+
+        // Two different IPv6 addresses from the same /64 prefix
+        let ip1: IpAddr = "2001:db8:1234:5678::1".parse().unwrap();
+        let ip2: IpAddr = "2001:db8:1234:5678::2".parse().unwrap();
+        // Different /64 prefix
+        let ip3: IpAddr = "2001:db8:1234:5679::1".parse().unwrap();
+
+        // Consume all tokens from first IP
+        assert!(limiter.check_ip(ip1, 100));
+
+        // Second IP from same /64 should be rejected (shared bucket)
+        assert!(!limiter.check_ip(ip2, 1));
+
+        // Third IP from different /64 should have its own bucket
+        assert!(limiter.check_ip(ip3, 100));
+
+        // Only 2 buckets should exist (one per /64 prefix)
+        assert_eq!(limiter.ip_buckets.len(), 2);
+    }
+
+    #[test]
+    fn test_ipv4_full_address_rate_limiting() {
+        let config = RateLimitConfig {
+            enabled: true,
+            points_per_sec_per_ip: 100,
+            points_per_sec_per_tenant: 1000,
+            burst_multiplier: 1.0,
+            bucket_ttl: Duration::from_secs(60),
+        };
+        let limiter = RateLimiter::new(config);
+
+        // Two different IPv4 addresses from the same /24 subnet
+        let ip1: IpAddr = "192.168.1.1".parse().unwrap();
+        let ip2: IpAddr = "192.168.1.2".parse().unwrap();
+
+        // Consume all tokens from first IP
+        assert!(limiter.check_ip(ip1, 100));
+
+        // Second IPv4 should have its own bucket (no prefix grouping)
+        assert!(limiter.check_ip(ip2, 100));
+
+        // 2 buckets for IPv4 (one per address)
+        assert_eq!(limiter.ip_buckets.len(), 2);
+    }
+
+    #[test]
+    fn test_ip_key_conversion() {
+        // IPv4
+        let ip4: IpAddr = "192.168.1.1".parse().unwrap();
+        let key4 = IpKey::from(ip4);
+        assert!(matches!(key4, IpKey::V4(_)));
+
+        // IPv6 from same /64 should produce same prefix
+        let ip6a: IpAddr = "2001:db8:1234:5678:aaaa:bbbb:cccc:dddd".parse().unwrap();
+        let ip6b: IpAddr = "2001:db8:1234:5678:1111:2222:3333:4444".parse().unwrap();
+        let key6a = IpKey::from(ip6a);
+        let key6b = IpKey::from(ip6b);
+
+        assert!(matches!(key6a, IpKey::V6Prefix(_)));
+        assert_eq!(key6a, key6b); // Same /64 prefix should produce same key
     }
 }

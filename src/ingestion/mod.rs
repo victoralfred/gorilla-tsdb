@@ -58,6 +58,7 @@ pub mod batch;
 pub mod buffer;
 pub mod metrics;
 pub mod network;
+pub mod observability;
 pub mod protocol;
 pub mod routing;
 pub mod schema;
