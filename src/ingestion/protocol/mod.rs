@@ -48,13 +48,15 @@
 //! ```
 
 pub mod error;
+pub mod json;
 pub mod line;
-// pub mod json;      // TODO: Implement JSON parser
-// pub mod protobuf;  // TODO: Implement Protobuf parser
+pub mod protobuf;
 // pub mod detect;    // TODO: Implement protocol detection
 
 pub use error::{ParseError, ParseErrorKind};
+pub use json::JsonParser;
 pub use line::{LineProtocolParser, ParsedLine};
+pub use protobuf::{Label, ProtobufParser, Sample, TimeSeries, WriteRequest};
 
 // Re-export key types from this module
 // (ParsedPoint, OwnedParsedPoint, FieldValue, Protocol, ProtocolParser are already public)

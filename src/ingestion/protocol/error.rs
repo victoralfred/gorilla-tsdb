@@ -58,8 +58,10 @@ impl ParseError {
         matches!(
             self.kind,
             ParseErrorKind::MissingMeasurement
+                | ParseErrorKind::EmptyMeasurement
+                | ParseErrorKind::NoFields
                 | ParseErrorKind::MissingFields
-                | ParseErrorKind::InvalidTimestamp
+                | ParseErrorKind::InvalidTimestamp { .. }
                 | ParseErrorKind::InvalidFieldValue { .. }
                 | ParseErrorKind::DuplicateTag { .. }
                 | ParseErrorKind::DuplicateField { .. }
@@ -124,11 +126,26 @@ pub enum ParseErrorKind {
     /// Missing measurement name
     MissingMeasurement,
 
+    /// Empty measurement name provided
+    EmptyMeasurement,
+
+    /// No fields provided
+    NoFields,
+
     /// Missing field set (at least one field required)
     MissingFields,
 
     /// Invalid timestamp format or out of range
-    InvalidTimestamp,
+    InvalidTimestamp {
+        /// The invalid timestamp value
+        value: String,
+    },
+
+    /// Invalid syntax in protocol
+    InvalidSyntax {
+        /// Description of the syntax error
+        message: String,
+    },
 
     /// Invalid field value
     InvalidFieldValue {
@@ -192,8 +209,15 @@ impl fmt::Display for ParseErrorKind {
             ParseErrorKind::InputTooLarge => write!(f, "Input exceeds maximum size"),
             ParseErrorKind::EmptyInput => write!(f, "Empty input"),
             ParseErrorKind::MissingMeasurement => write!(f, "Missing measurement name"),
+            ParseErrorKind::EmptyMeasurement => write!(f, "Empty measurement name"),
+            ParseErrorKind::NoFields => write!(f, "No fields provided"),
             ParseErrorKind::MissingFields => write!(f, "Missing field set"),
-            ParseErrorKind::InvalidTimestamp => write!(f, "Invalid timestamp"),
+            ParseErrorKind::InvalidTimestamp { value } => {
+                write!(f, "Invalid timestamp: {}", value)
+            }
+            ParseErrorKind::InvalidSyntax { message } => {
+                write!(f, "Invalid syntax: {}", message)
+            }
             ParseErrorKind::InvalidFieldValue { field, reason } => {
                 write!(f, "Invalid value for field '{}': {}", field, reason)
             }

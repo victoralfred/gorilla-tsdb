@@ -118,6 +118,7 @@ impl<'a> ParsedLine<'a> {
 /// assert_eq!(points.len(), 1);
 /// assert_eq!(points[0].measurement, "cpu");
 /// ```
+#[derive(Debug, Clone)]
 pub struct LineProtocolParser {
     config: LineProtocolConfig,
 }
@@ -716,9 +717,12 @@ impl<'a> LineParser<'a> {
         }
 
         let ts_str = &self.input[start..self.position];
-        ts_str
-            .parse::<i64>()
-            .map_err(|_| ParseError::new(ParseErrorKind::InvalidTimestamp).at_column(start + 1))
+        ts_str.parse::<i64>().map_err(|_| {
+            ParseError::new(ParseErrorKind::InvalidTimestamp {
+                value: ts_str.to_string(),
+            })
+            .at_column(start + 1)
+        })
     }
 }
 

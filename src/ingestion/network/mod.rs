@@ -42,6 +42,7 @@
 
 pub mod connection;
 pub mod error;
+pub mod http;
 pub mod rate_limit;
 pub mod tcp;
 pub mod tls;
@@ -49,6 +50,7 @@ pub mod udp;
 
 pub use connection::{ConnectionConfig, ConnectionManager};
 pub use error::NetworkError;
+pub use http::{HttpConfig, HttpListener};
 pub use rate_limit::{RateLimitConfig, RateLimiter};
 pub use tcp::TcpListener;
 pub use tls::{TlsConfig, TlsVersion};
