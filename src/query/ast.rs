@@ -577,7 +577,10 @@ impl SeriesSelector {
     /// Disallows: spaces, special characters, path traversal patterns
     fn validate_identifier(name: &str, field_name: &str) -> QueryResult<()> {
         if name.is_empty() {
-            return Err(QueryError::validation(format!("{} cannot be empty", field_name)));
+            return Err(QueryError::validation(format!(
+                "{} cannot be empty",
+                field_name
+            )));
         }
 
         if name.len() > 256 {
