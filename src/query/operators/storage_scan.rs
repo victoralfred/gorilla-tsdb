@@ -266,7 +266,8 @@ impl StorageScanOperator {
                 .await
                 .map_err(|e| QueryError::execution(format!("Task join error: {}", e)))?;
 
-                read_result.map_err(|e| QueryError::execution(format!("Failed to read chunk: {}", e)))
+                read_result
+                    .map_err(|e| QueryError::execution(format!("Failed to read chunk: {}", e)))
             })
         })?;
 

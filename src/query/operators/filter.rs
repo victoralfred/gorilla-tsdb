@@ -29,7 +29,11 @@ impl FilterOperator {
     /// Optimized to avoid copying when all rows match (PERF-005)
     fn filter_batch(&self, batch: DataBatch) -> DataBatch {
         // First pass: count matches to determine if we can avoid copying
-        let match_count = batch.values.iter().filter(|&&v| self.predicate.evaluate(v)).count();
+        let match_count = batch
+            .values
+            .iter()
+            .filter(|&&v| self.predicate.evaluate(v))
+            .count();
 
         // If all rows match, return original batch without copying (PERF-005)
         if match_count == batch.len() {

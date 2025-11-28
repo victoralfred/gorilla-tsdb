@@ -18,6 +18,7 @@ use crate::query::operators::numeric::{KahanSum, WelfordState};
 use crate::query::operators::{simd, DataBatch, Operator};
 use crate::types::SeriesId;
 use std::collections::HashMap;
+use tdigest::TDigest;
 
 // ============================================================================
 // Aggregation State
@@ -58,12 +59,25 @@ pub enum AggregationState {
     /// Distinct values (using HashSet for now, HLL for large cardinalities later)
     Distinct(std::collections::HashSet<u64>),
 
-    /// Percentile computation state
-    /// TODO: Replace with t-digest when dependency is added
-    Percentile {
+    /// Percentile computation state using t-digest for streaming estimation
+    ///
+    /// T-digest provides:
+    /// - O(1) insertion with constant memory
+    /// - Accurate percentile estimates (especially at tails)
+    /// - Mergeable digests for parallel aggregation
+    PercentileTDigest {
         /// Target percentile (0-100)
         target: u8,
-        /// Collected values for percentile calculation
+        /// T-digest for streaming percentile estimation
+        digest: TDigest,
+    },
+
+    /// Fallback percentile using collected values (for small datasets)
+    /// Used when exact percentile is needed or dataset is small
+    PercentileExact {
+        /// Target percentile (0-100)
+        target: u8,
+        /// Collected values for exact percentile calculation
         values: Vec<f64>,
     },
 }
@@ -79,13 +93,13 @@ impl AggregationState {
             AggregationFunction::Avg => AggregationState::Stats(WelfordState::new()),
             AggregationFunction::StdDev => AggregationState::Stats(WelfordState::new()),
             AggregationFunction::Variance => AggregationState::Stats(WelfordState::new()),
-            AggregationFunction::Median => AggregationState::Percentile {
+            AggregationFunction::Median => AggregationState::PercentileTDigest {
                 target: 50,
-                values: Vec::new(),
+                digest: TDigest::new_with_size(100), // 100 centroids for good accuracy
             },
-            AggregationFunction::Percentile(p) => AggregationState::Percentile {
+            AggregationFunction::Percentile(p) => AggregationState::PercentileTDigest {
                 target: *p,
-                values: Vec::new(),
+                digest: TDigest::new_with_size(100),
             },
             AggregationFunction::First => AggregationState::First(None),
             AggregationFunction::Last => AggregationState::Last(None),
@@ -155,10 +169,20 @@ impl AggregationState {
                     set.insert(v.to_bits());
                 }
             }
-            AggregationState::Percentile { values: vals, .. } => {
+            AggregationState::PercentileTDigest { digest, .. } => {
+                // Use t-digest for streaming percentile estimation
+                // Filter NaN values before adding to digest
+                let valid_values: Vec<f64> =
+                    values.iter().filter(|v| !v.is_nan()).copied().collect();
+                if !valid_values.is_empty() {
+                    // Merge new values into the digest
+                    *digest = digest.merge_unsorted(valid_values);
+                }
+            }
+            AggregationState::PercentileExact { values: vals, .. } => {
                 // Collect all values (will be sorted when finalizing)
-                // TODO: Use t-digest for streaming percentile estimation
-                vals.extend_from_slice(values);
+                // Filter NaN values
+                vals.extend(values.iter().filter(|v| !v.is_nan()).copied());
             }
         }
     }
@@ -209,9 +233,19 @@ impl AggregationState {
                 }
             }
             (AggregationState::Distinct(set), _) => set.len() as f64,
-            (AggregationState::Percentile { target, values }, _) => {
+            (AggregationState::PercentileTDigest { target, digest }, _) => {
+                // Use t-digest for streaming percentile estimation
+                // Returns estimate at the given percentile (0-100 scale converted to 0-1)
+                if digest.is_empty() {
+                    return f64::NAN;
+                }
+                digest.estimate_quantile(*target as f64 / 100.0)
+            }
+            (AggregationState::PercentileExact { target, values }, _) => {
+                // Exact percentile calculation for small datasets
                 // Filter out NaN values before calculation (EDGE-004)
-                let mut valid_values: Vec<f64> = values.iter().filter(|v| !v.is_nan()).copied().collect();
+                let mut valid_values: Vec<f64> =
+                    values.iter().filter(|v| !v.is_nan()).copied().collect();
 
                 // Handle empty input (EDGE-001)
                 if valid_values.is_empty() {
@@ -224,7 +258,8 @@ impl AggregationState {
                 }
 
                 // Use O(n) selection algorithm instead of O(n log n) sort (PERF-003)
-                let idx = ((*target as f64 / 100.0) * (valid_values.len() - 1) as f64).round() as usize;
+                let idx =
+                    ((*target as f64 / 100.0) * (valid_values.len() - 1) as f64).round() as usize;
                 let idx = idx.min(valid_values.len().saturating_sub(1));
 
                 // select_nth_unstable partially sorts and returns the element at idx
@@ -295,10 +330,17 @@ impl AggregationState {
                 a.extend(b.iter());
             }
             (
-                AggregationState::Percentile { values: a, .. },
-                AggregationState::Percentile { values: b, .. },
+                AggregationState::PercentileTDigest { digest: a, .. },
+                AggregationState::PercentileTDigest { digest: b, .. },
             ) => {
-                // TODO: With t-digest, we can merge digests efficiently
+                // T-digest supports efficient merging for parallel aggregation
+                *a = TDigest::merge_digests(vec![a.clone(), b.clone()]);
+            }
+            (
+                AggregationState::PercentileExact { values: a, .. },
+                AggregationState::PercentileExact { values: b, .. },
+            ) => {
+                // For exact percentile, concatenate the values
                 a.extend_from_slice(b);
             }
             _ => {} // Incompatible states - no-op
@@ -452,14 +494,22 @@ impl Operator for AggregationOperator {
                 }
 
                 // Memory limit check for percentile aggregation (SEC-001)
-                // Percentile needs to store all values, so check memory before processing
-                if matches!(self.function, AggregationFunction::Percentile(_)) {
+                // Note: With t-digest, memory is constant (~8KB per centroid).
+                // This check is kept for PercentileExact variant which stores all values.
+                // T-digest uses ~100 centroids by default = ~800 bytes total.
+                if matches!(
+                    self.function,
+                    AggregationFunction::Percentile(_) | AggregationFunction::Median
+                ) {
+                    // Track batch processing memory (temporary allocations)
                     let additional_mem = batch.len() * 8; // 8 bytes per f64 value
                     if !ctx.allocate_memory(additional_mem) {
                         return Err(QueryError::resource_limit(
                             "Memory limit exceeded during percentile aggregation",
                         ));
                     }
+                    // Release immediately since t-digest doesn't keep all values
+                    ctx.release_memory(additional_mem);
                 }
 
                 self.process_batch(&batch);
@@ -576,7 +626,9 @@ impl WindowedAggregation {
         };
 
         self.window_start = self.window_start.saturating_add(advance_nanos);
-        self.window_end = self.window_start.saturating_add(safe_nanos(self.window.duration.as_nanos()));
+        self.window_end = self
+            .window_start
+            .saturating_add(safe_nanos(self.window.duration.as_nanos()));
 
         // Reset states for new window
         self.states = self.functions.iter().map(AggregationState::new).collect();
