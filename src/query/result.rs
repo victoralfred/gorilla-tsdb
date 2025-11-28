@@ -398,9 +398,10 @@ impl ResultMetadata {
 // ============================================================================
 
 /// Output format for query results
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ResultFormat {
     /// Compact JSON
+    #[default]
     Json,
     /// Pretty-printed JSON
     JsonPretty,
@@ -408,12 +409,6 @@ pub enum ResultFormat {
     Csv,
     /// ASCII table (for CLI)
     Table,
-}
-
-impl Default for ResultFormat {
-    fn default() -> Self {
-        ResultFormat::Json
-    }
 }
 
 impl fmt::Display for ResultFormat {
