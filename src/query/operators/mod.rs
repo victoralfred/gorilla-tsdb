@@ -156,7 +156,7 @@ impl DataBatch {
             return vec![self];
         }
 
-        let n_morsels = (self.len() + morsel_size - 1) / morsel_size;
+        let n_morsels = self.len().div_ceil(morsel_size);
         let mut morsels = Vec::with_capacity(n_morsels);
 
         let mut start = 0;

@@ -11,7 +11,7 @@
 //! - Kahan summation for accurate sums
 //! - T-digest for streaming percentiles
 
-use crate::query::ast::{AggregationFunction, SeriesSelector, WindowSpec, WindowType};
+use crate::query::ast::{AggregationFunction, WindowSpec, WindowType};
 use crate::query::error::QueryError;
 use crate::query::executor::ExecutionContext;
 use crate::query::operators::numeric::{KahanSum, WelfordState};
@@ -48,7 +48,9 @@ pub enum AggregationState {
 
     /// For rate calculation: first timestamp, first value, last timestamp, last value
     Rate {
+        /// First timestamp and value seen
         first: Option<(i64, f64)>,
+        /// Last timestamp and value seen
         last: Option<(i64, f64)>,
     },
 
@@ -57,7 +59,12 @@ pub enum AggregationState {
 
     /// Percentile computation state
     /// TODO: Replace with t-digest when dependency is added
-    Percentile { target: u8, values: Vec<f64> },
+    Percentile {
+        /// Target percentile (0-100)
+        target: u8,
+        /// Collected values for percentile calculation
+        values: Vec<f64>,
+    },
 }
 
 impl AggregationState {
@@ -334,7 +341,8 @@ impl AggregationOperator {
         self
     }
 
-    /// Get or create state for a series
+    /// Get or create state for a series (reserved for multi-series aggregation)
+    #[allow(dead_code)]
     fn get_state(&mut self, series_id: u64) -> &mut AggregationState {
         let function = self.function;
         self.states
@@ -350,8 +358,7 @@ impl AggregationOperator {
                 // Group data by series
                 let mut series_data: HashMap<u64, (Vec<i64>, Vec<f64>)> = HashMap::new();
 
-                for i in 0..batch.len() {
-                    let sid = series_ids[i];
+                for (i, &sid) in series_ids.iter().enumerate() {
                     let entry = series_data
                         .entry(sid)
                         .or_insert_with(|| (Vec::new(), Vec::new()));

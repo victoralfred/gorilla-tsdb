@@ -19,14 +19,13 @@
 //!     .with_batch_size(4096);
 //! ```
 
-use crate::query::ast::{Predicate, PredicateOp, PredicateValue, SeriesSelector};
+use crate::query::ast::{Predicate, SeriesSelector};
 use crate::query::error::QueryError;
 use crate::query::executor::ExecutionContext;
 use crate::query::operators::{DataBatch, Operator};
 use crate::storage::chunk::ChunkMetadata;
 use crate::storage::{ChunkReader, LocalDiskEngine, QueryOptions};
 use crate::types::{DataPoint, SeriesId, TimeRange};
-use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Storage-backed scan operator that reads from actual disk storage
@@ -37,7 +36,8 @@ pub struct StorageScanOperator {
     /// Storage engine reference for chunk discovery
     storage: Arc<LocalDiskEngine>,
 
-    /// Chunk reader for decompression
+    /// Chunk reader for decompression (reserved for async reads)
+    #[allow(dead_code)]
     reader: ChunkReader,
 
     /// Series selector for filtering
@@ -180,9 +180,11 @@ impl StorageScanOperator {
         }
     }
 
-    /// Load points from the current chunk
+    /// Load points from the current chunk (async version)
     ///
-    /// Uses ChunkReader to decompress the chunk and load points into buffer
+    /// Uses ChunkReader to decompress the chunk and load points into buffer.
+    /// Reserved for future async execution path.
+    #[allow(dead_code)]
     async fn load_current_chunk(&mut self) -> Result<bool, QueryError> {
         if self.current_chunk_idx >= self.chunks.len() {
             return Ok(false);

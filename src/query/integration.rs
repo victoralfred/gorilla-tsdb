@@ -141,6 +141,7 @@ impl QueryEngine {
     ///
     /// Recursively constructs operators bottom-up, connecting them
     /// in a pull-based pipeline.
+    #[allow(clippy::type_complexity)]
     fn build_operator_tree<'a>(
         &'a self,
         plan: &'a LogicalPlan,
@@ -240,7 +241,7 @@ impl QueryEngine {
                 // Get first aggregation function (for now, single function support)
                 let function = functions
                     .first()
-                    .map(|a| a.function.clone())
+                    .map(|a| a.function)
                     .unwrap_or(AggregationFunction::Count);
 
                 // Build aggregation operator with builder pattern
@@ -268,7 +269,7 @@ impl QueryEngine {
                 let input_op = self.build_operator_tree(input).await?;
                 Ok(Box::new(DownsampleOperator::new(
                     input_op,
-                    method.clone(),
+                    *method,
                     *target_points,
                 )))
             }
