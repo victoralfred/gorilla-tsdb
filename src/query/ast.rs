@@ -370,9 +370,15 @@ pub enum WindowType {
     /// Non-overlapping fixed windows
     Tumbling,
     /// Overlapping windows with slide interval
-    Sliding { slide: Duration },
+    Sliding {
+        /// Slide interval between window starts
+        slide: Duration,
+    },
     /// Session windows based on activity gaps
-    Session { gap: Duration },
+    Session {
+        /// Maximum gap between events in same session
+        gap: Duration,
+    },
 }
 
 /// Strategy for filling empty windows
@@ -599,17 +605,43 @@ impl SeriesSelector {
 #[derive(Debug, Clone, PartialEq)]
 pub enum TagMatcher {
     /// Exact match: tag = value
-    Equals { key: String, value: String },
+    Equals {
+        /// Tag key to match
+        key: String,
+        /// Expected tag value
+        value: String,
+    },
     /// Not equal: tag != value
-    NotEquals { key: String, value: String },
+    NotEquals {
+        /// Tag key to match
+        key: String,
+        /// Value that should not match
+        value: String,
+    },
     /// Regex match: tag =~ /pattern/
-    Regex { key: String, pattern: String },
+    Regex {
+        /// Tag key to match
+        key: String,
+        /// Regex pattern to match against
+        pattern: String,
+    },
     /// Not regex: tag !~ /pattern/
-    NotRegex { key: String, pattern: String },
+    NotRegex {
+        /// Tag key to match
+        key: String,
+        /// Regex pattern that should not match
+        pattern: String,
+    },
     /// Tag exists
-    Exists { key: String },
+    Exists {
+        /// Tag key that must exist
+        key: String,
+    },
     /// Tag does not exist
-    NotExists { key: String },
+    NotExists {
+        /// Tag key that must not exist
+        key: String,
+    },
 }
 
 // ============================================================================

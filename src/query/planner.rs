@@ -161,7 +161,7 @@ impl QueryPlanner {
         if let Some(ref order) = query.order_by {
             plan = LogicalPlan::Sort {
                 input: Box::new(plan),
-                order_by: vec![("timestamp".into(), order.direction.clone())],
+                order_by: vec![("timestamp".into(), order.direction)],
             };
         }
 
@@ -218,7 +218,7 @@ impl QueryPlanner {
         // Add downsample operation
         let plan = LogicalPlan::Downsample {
             input: Box::new(scan),
-            method: query.method.clone(),
+            method: query.method,
             target_points: query.target_points,
         };
 
@@ -261,6 +261,7 @@ impl QueryPlanner {
     /// Push predicates down closer to scan operators
     ///
     /// This reduces data flowing through the pipeline by filtering early
+    #[allow(clippy::only_used_in_recursion)]
     fn pushdown_predicates(&self, plan: LogicalPlan) -> LogicalPlan {
         match plan {
             // If we have a filter over a scan, combine them
@@ -348,6 +349,7 @@ impl QueryPlanner {
     }
 
     /// Estimate the cost of executing a logical plan
+    #[allow(clippy::only_used_in_recursion)]
     fn estimate_cost(&self, plan: &LogicalPlan) -> CostEstimate {
         match plan {
             LogicalPlan::Scan { time_range, .. }
@@ -441,59 +443,83 @@ impl Default for QueryPlanner {
 /// This is an intermediate representation that gets optimized before
 /// being converted to a physical plan with concrete operators.
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub enum LogicalPlan {
     /// Scan data from storage
     Scan {
+        /// Series selector for filtering
         selector: SeriesSelector,
+        /// Time range to scan
         time_range: Option<TimeRange>,
+        /// Columns to retrieve
         columns: Vec<String>,
     },
 
     /// Scan with integrated predicate (after optimization)
     ScanWithPredicate {
+        /// Series selector for filtering
         selector: SeriesSelector,
+        /// Time range to scan
         time_range: Option<TimeRange>,
+        /// Columns to retrieve
         columns: Vec<String>,
+        /// Predicate pushed down to scan
         predicate: Predicate,
     },
 
     /// Filter rows based on predicate
     Filter {
+        /// Input plan to filter
         input: Box<LogicalPlan>,
+        /// Predicate to apply
         predicate: Predicate,
     },
 
     /// Aggregate values
     Aggregate {
+        /// Input plan to aggregate
         input: Box<LogicalPlan>,
+        /// Aggregation functions to apply
         functions: Vec<crate::query::ast::Aggregation>,
+        /// Optional time window
         window: Option<crate::query::ast::WindowSpec>,
+        /// Group by keys
         group_by: Vec<String>,
     },
 
     /// Sort results
     Sort {
+        /// Input plan to sort
         input: Box<LogicalPlan>,
+        /// Sort order specifications
         order_by: Vec<(String, crate::query::ast::OrderDirection)>,
     },
 
     /// Limit and offset results
     Limit {
+        /// Input plan to limit
         input: Box<LogicalPlan>,
+        /// Maximum rows to return
         limit: Option<usize>,
+        /// Rows to skip
         offset: Option<usize>,
     },
 
     /// Downsample for visualization
     Downsample {
+        /// Input plan to downsample
         input: Box<LogicalPlan>,
+        /// Downsampling algorithm
         method: crate::query::ast::DownsampleMethod,
+        /// Target number of points
         target_points: usize,
     },
 
     /// Get latest values (optimized path)
     Latest {
+        /// Series selector
         selector: SeriesSelector,
+        /// Number of latest values to fetch
         count: usize,
     },
 
