@@ -143,15 +143,22 @@ fn parse_aggregation_expr(input: &str) -> IResult<&str, Query> {
 }
 
 /// Parse aggregation function name
+/// Supports all 9 core aggregation functions plus aliases for compatibility
 fn parse_agg_function(input: &str) -> IResult<&str, AggregationFunction> {
     alt((
+        // Core aggregation functions
         value(AggregationFunction::Sum, tag_no_case("sum")),
         value(AggregationFunction::Avg, tag_no_case("avg")),
         value(AggregationFunction::Min, tag_no_case("min")),
         value(AggregationFunction::Max, tag_no_case("max")),
         value(AggregationFunction::Count, tag_no_case("count")),
+        value(AggregationFunction::First, tag_no_case("first")),
+        value(AggregationFunction::Last, tag_no_case("last")),
+        // Statistical functions - stddev and variance with aliases
         value(AggregationFunction::StdDev, tag_no_case("stddev")),
-        value(AggregationFunction::Variance, tag_no_case("stdvar")),
+        value(AggregationFunction::Variance, tag_no_case("variance")),
+        value(AggregationFunction::Variance, tag_no_case("stdvar")), // PromQL standard alias
+        // Additional functions
         value(AggregationFunction::Median, tag_no_case("median")),
         value(
             AggregationFunction::CountDistinct,
