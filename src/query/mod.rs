@@ -63,6 +63,7 @@
 //! ```
 
 pub mod ast;
+pub mod cache;
 pub mod error;
 pub mod executor;
 pub mod integration;
@@ -84,3 +85,4 @@ pub use operators::{
 };
 pub use planner::{QueryPlan, QueryPlanner};
 pub use result::{QueryResult, ResultFormat, ResultRow};
+pub use cache::{CacheConfig, CacheKey, QueryCache, SharedQueryCache};
