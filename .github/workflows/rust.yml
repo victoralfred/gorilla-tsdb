@@ -146,6 +146,8 @@ jobs:
             ${{ runner.os }}-${{ matrix.rust }}-
 
       - name: Build
+        # **FIXED:** Explicitly setting the shell to 'bash' ensures the '\' line continuation works on all runners.
+        shell: bash
         run: |
           cargo build \
             ${{ matrix.profile == 'release' && '--release' || '' }} \
@@ -156,6 +158,7 @@ jobs:
       - name: Run unit and integration tests
         # The '|| true' allows the step to finish successfully even if tests fail on non-primary OSes
         # Branch protection rules MUST be set to require only the Ubuntu runs.
+        shell: bash # Setting shell to bash here too for consistency with the multi-line command
         run: |
           cargo test \
             ${{ matrix.profile == 'release' && '--release' || '' }} \
