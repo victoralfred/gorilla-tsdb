@@ -71,12 +71,15 @@ pub mod integration;
 pub mod operators;
 pub mod planner;
 pub mod result;
+pub mod subscription;
 
 // Re-export main types
 pub use ast::{
     Aggregation, AggregationFunction, DownsampleMethod, OrderDirection, Predicate, PredicateOp,
     Query, QueryBuilder, SeriesSelector, WindowSpec,
 };
+pub use cache::{CacheConfig, CacheKey, QueryCache, SharedQueryCache};
+pub use chunk_index::{ChunkIndex, ChunkIndexConfig, IndexedChunk};
 pub use error::{QueryError, QueryErrorKind};
 pub use executor::{ExecutorConfig, QueryExecutor};
 pub use integration::{QueryEngine, RedisQueryExt};
@@ -86,5 +89,7 @@ pub use operators::{
 };
 pub use planner::{QueryPlan, QueryPlanner};
 pub use result::{QueryResult, ResultFormat, ResultRow};
-pub use cache::{CacheConfig, CacheKey, QueryCache, SharedQueryCache};
-pub use chunk_index::{ChunkIndex, ChunkIndexConfig, IndexedChunk};
+pub use subscription::{
+    QuerySubscription, SharedSubscriptionManager, SubscriptionConfig, SubscriptionManager,
+    SubscriptionUpdate,
+};
