@@ -179,7 +179,7 @@ async fn test_chunk_lifecycle_edge_values() {
     let mut chunk = Chunk::new_active(1, 100);
 
     // Edge values
-    let edge_values = vec![
+    let edge_values = [
         0.0,
         -0.0,
         f64::MIN_POSITIVE,
@@ -469,7 +469,7 @@ async fn test_mmap_large_chunk() {
 async fn test_concurrent_writes_active_chunk() {
     let config = SealConfig {
         max_points: 100_000,
-        max_duration_ms: 3600_000,
+        max_duration_ms: 3_600_000,
         max_size_bytes: 100 * 1024 * 1024,
     };
 

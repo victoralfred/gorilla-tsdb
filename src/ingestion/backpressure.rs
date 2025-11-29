@@ -481,12 +481,17 @@ mod tests {
 
     #[test]
     fn test_backpressure_config_validation() {
-        let mut config = BackpressureConfig::default();
-        config.memory_limit = 0;
+        let config = BackpressureConfig {
+            memory_limit: 0,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
 
-        config.memory_limit = 1000;
-        config.memory_warning_threshold = 101;
+        let config = BackpressureConfig {
+            memory_limit: 1000,
+            memory_warning_threshold: 101,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 

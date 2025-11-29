@@ -169,13 +169,17 @@ mod tests {
 
     #[test]
     fn test_validation() {
-        let mut config = SpillConfig::default();
-
-        config.max_file_size = 100; // Too small
+        let config = SpillConfig {
+            max_file_size: 100, // Too small
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
 
-        config.max_file_size = 1024 * 1024;
-        config.max_files = 0;
+        let config = SpillConfig {
+            max_file_size: 1024 * 1024,
+            max_files: 0,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 }

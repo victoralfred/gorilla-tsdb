@@ -75,7 +75,7 @@ async fn test_metadata_atomic_save_concurrent() {
             let mut metadata = SeriesMetadata::new(i as u128);
             metadata.total_points = i * 1000;
 
-            metadata.save(&*path).await
+            metadata.save(&path).await
         });
 
         handles.push(handle);
@@ -588,7 +588,7 @@ async fn test_path_traversal_prevention() {
         let full_path = temp_dir.path().join(mal_path);
 
         // Even if file is created (shouldn't escape temp_dir due to OS protection)
-        if let Ok(_) = fs::write(&full_path, b"malicious").await {
+        if (fs::write(&full_path, b"malicious").await).is_ok() {
             // Cleanup should only affect files within the series directory
             let metadata = SeriesMetadata::new(1);
             let _ = DirectoryMaintenance::cleanup_old_chunks(temp_dir.path(), &metadata).await;
@@ -616,7 +616,7 @@ async fn test_metadata_filename_injection() {
         let metadata = SeriesMetadata::new(1);
 
         // Should handle special characters safely
-        if let Ok(_) = metadata.save(&path).await {
+        if (metadata.save(&path).await).is_ok() {
             let _ = SeriesMetadata::load(&path).await;
         }
     }
@@ -740,7 +740,7 @@ async fn test_lock_race_condition() {
 
     // At most one at a time, but multiple could succeed sequentially
     assert!(
-        success_count >= 1 && success_count <= 10,
+        (1..=10).contains(&success_count),
         "Lock acquisitions should succeed but enforce mutual exclusion"
     );
 }

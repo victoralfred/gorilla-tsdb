@@ -17,7 +17,7 @@ path = "src/bin/server.rs"
 [features]
 default = []
 # Enable TLS support for Redis connections (uses rustls)
-redis-tls = ["redis/tls-rustls"]
+redis-tls = ["redis/tokio-rustls-comp"]
 
 [dependencies]
 # Async runtime
@@ -36,7 +36,7 @@ memmap2 = "0.9"
 snap = "1.0"
 
 # Index
-redis = { version = "0.32.7", features = ["tokio-comp", "connection-manager"] }
+redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -111,7 +111,8 @@ toml = "0.9.8"
 nom = "8.0"
 
 # Dependencues
-protobuf = "4.33.1-release"
+protobuf = "3.7.2"
+base64 = "0.22.1"
 
 [dev-dependencies]
 criterion = "0.7.0"

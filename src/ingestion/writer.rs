@@ -431,12 +431,17 @@ mod tests {
 
     #[test]
     fn test_writer_config_validation() {
-        let mut config = WriterConfig::default();
-        config.num_workers = 0;
+        let config = WriterConfig {
+            num_workers: 0,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
 
-        config.num_workers = 4;
-        config.max_concurrent_writes = 0;
+        let config = WriterConfig {
+            num_workers: 4,
+            max_concurrent_writes: 0,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 

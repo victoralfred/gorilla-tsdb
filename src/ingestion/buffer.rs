@@ -763,8 +763,10 @@ mod tests {
 
     #[test]
     fn test_buffer_config_validation() {
-        let mut config = BufferConfig::default();
-        config.max_points_per_series = 0;
+        let config = BufferConfig {
+            max_points_per_series: 0,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 

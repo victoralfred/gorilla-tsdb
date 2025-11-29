@@ -612,7 +612,7 @@ mod tests {
         // Sub-hour query
         let short_range = TimeRange {
             start: 0,
-            end: 1800_000,
+            end: 1_800_000,
         }; // 30 min
         let analysis = TimeRangeAnalyzer::analyze(&short_range);
         assert_eq!(analysis.granularity, TimeGranularity::SubHour);
@@ -621,7 +621,7 @@ mod tests {
         // Day query
         let day_range = TimeRange {
             start: 0,
-            end: 86400_000,
+            end: 86_400_000,
         }; // 1 day
         let analysis = TimeRangeAnalyzer::analyze(&day_range);
         assert_eq!(analysis.granularity, TimeGranularity::Day);
@@ -630,7 +630,7 @@ mod tests {
         // Week query (1 week exactly = 604800000 ms)
         let week_range = TimeRange {
             start: 0,
-            end: 604800_000,
+            end: 604_800_000,
         };
         let analysis = TimeRangeAnalyzer::analyze(&week_range);
         assert_eq!(analysis.granularity, TimeGranularity::Week);
@@ -640,7 +640,7 @@ mod tests {
         // Large range (30 days) that should trigger streaming
         let month_range = TimeRange {
             start: 0,
-            end: 2592000_000, // 30 days
+            end: 2_592_000_000, // 30 days
         };
         let analysis = TimeRangeAnalyzer::analyze(&month_range);
         assert_eq!(analysis.granularity, TimeGranularity::Week);

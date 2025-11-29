@@ -521,12 +521,17 @@ mod tests {
 
     #[test]
     fn test_batch_config_validation() {
-        let mut config = BatchConfig::default();
-        config.max_batch_size = 0;
+        let config = BatchConfig {
+            max_batch_size: 0,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
 
-        config.max_batch_size = 100;
-        config.max_batch_timeout = Duration::ZERO;
+        let config = BatchConfig {
+            max_batch_size: 100,
+            max_batch_timeout: Duration::ZERO,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 

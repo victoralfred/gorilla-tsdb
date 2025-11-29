@@ -1,11 +1,11 @@
-///! Critical Issues Test Suite
-///!
-///! This test suite validates fixes for critical issues identified in the
-///! comprehensive security and performance audit. Each test is designed to
-///! catch subtle bugs, race conditions, and edge cases that could cause
-///! silent failures or data corruption in production.
-///!
-///! Run with: cargo test --test critical_issues_tests
+//! Critical Issues Test Suite
+//!
+//! This test suite validates fixes for critical issues identified in the
+//! comprehensive security and performance audit. Each test is designed to
+//! catch subtle bugs, race conditions, and edge cases that could cause
+//! silent failures or data corruption in production.
+//!
+//! Run with: cargo test --test critical_issues_tests
 use gorilla_tsdb::engine::traits::{BlockMetadata, CompressedBlock, Compressor};
 use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
 use gorilla_tsdb::storage::chunk::Chunk;
@@ -59,7 +59,7 @@ async fn test_rc1_double_seal_race() {
     let result2 = handle2.await.unwrap();
 
     // One should succeed, one should fail gracefully
-    let successes = vec![result1.is_ok(), result2.is_ok()]
+    let successes = [result1.is_ok(), result2.is_ok()]
         .iter()
         .filter(|&&x| x)
         .count();

@@ -445,7 +445,7 @@ mod tests {
         let router = TagAffinityRouter::new(8, "tenant".to_string());
 
         // All series for a tenant should go to same shard
-        let tenant_series = vec![
+        let tenant_series = [
             "cpu,tenant=acme,host=server01",
             "memory,tenant=acme,host=server02",
             "disk,tenant=acme,host=server03",

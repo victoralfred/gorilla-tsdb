@@ -717,23 +717,35 @@ mod tests {
 
     #[test]
     fn test_config_validation() {
-        let mut config = RedisConfig::default();
-
         // Empty URL
-        config.url = "".to_string();
+        let config = RedisConfig {
+            url: "".to_string(),
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
 
         // Zero pool size
-        config.url = "redis://localhost".to_string();
-        config.pool_size = 0;
+        let config = RedisConfig {
+            url: "redis://localhost".to_string(),
+            pool_size: 0,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
 
         // Pool size too large
-        config.pool_size = 1001;
+        let config = RedisConfig {
+            url: "redis://localhost".to_string(),
+            pool_size: 1001,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
 
         // Valid config
-        config.pool_size = 16;
+        let config = RedisConfig {
+            url: "redis://localhost".to_string(),
+            pool_size: 16,
+            ..Default::default()
+        };
         assert!(config.validate().is_ok());
     }
 

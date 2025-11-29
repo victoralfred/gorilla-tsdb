@@ -199,13 +199,18 @@ impl QueryExecutor {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
-    /// let executor = QueryExecutor::new();
+    /// ```rust
+    /// use gorilla_tsdb::query::{QueryExecutor, QueryBuilder, ExecutorConfig};
+    /// use gorilla_tsdb::types::TimeRange;
+    ///
+    /// // Create executor with config using with_config method
+    /// let mut executor = QueryExecutor::with_config(ExecutorConfig::default());
     /// let query = QueryBuilder::new()
     ///     .select_series(1)
-    ///     .time_range(TimeRange::last_hours(1))
-    ///     .build()?;
-    /// let result = executor.execute(query)?;
+    ///     .time_range(TimeRange::new(0, 3600000).unwrap())
+    ///     .build()
+    ///     .unwrap();
+    /// let result = executor.execute(query);
     /// ```
     pub fn execute(&mut self, query: Query) -> Result<QueryResult, QueryError> {
         let start = Instant::now();
@@ -682,13 +687,15 @@ mod tests {
 
     #[test]
     fn test_execution_stats() {
-        let mut stats = ExecutionStats::default();
-        stats.cache_hits = 80;
-        stats.cache_misses = 20;
-        stats.rows_scanned = 1000;
-        stats.rows_returned = 100;
-        stats.chunks_read = 5;
-        stats.chunks_pruned = 15;
+        let stats = ExecutionStats {
+            cache_hits: 80,
+            cache_misses: 20,
+            rows_scanned: 1000,
+            rows_returned: 100,
+            chunks_read: 5,
+            chunks_pruned: 15,
+            ..Default::default()
+        };
 
         assert!((stats.cache_hit_ratio() - 0.8).abs() < 0.001);
         assert!((stats.selectivity() - 0.1).abs() < 0.001);

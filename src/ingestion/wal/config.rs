@@ -155,13 +155,17 @@ mod tests {
 
     #[test]
     fn test_validation() {
-        let mut config = WalConfig::default();
-
-        config.segment_size = 100; // Too small
+        let config = WalConfig {
+            segment_size: 100, // Too small
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
 
-        config.segment_size = 64 * 1024 * 1024;
-        config.write_buffer_size = 0;
+        let config = WalConfig {
+            segment_size: 64 * 1024 * 1024,
+            write_buffer_size: 0,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 

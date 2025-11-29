@@ -157,6 +157,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "base64"
+version = "0.22.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
+
+[[package]]
 name = "bincode"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -332,9 +338,9 @@ dependencies = [
 
 [[package]]
 name = "core-foundation"
-version = "0.10.1"
+version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2a6cd9ae233e7f62ba4e9353e81a88df7fc8a5987b8d445b4d90c879bd156f6"
+checksum = "91e195e091a93c46f7102ec7818a2aa394e1e1771c3ab4825963fa03e45afb8f"
 dependencies = [
  "core-foundation-sys",
  "libc",
@@ -661,6 +667,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "axum",
+ "base64",
  "bincode",
  "byteorder",
  "bytes",
@@ -685,7 +692,7 @@ dependencies = [
  "prometheus",
  "proptest",
  "prost",
- "protobuf 4.33.1-release",
+ "protobuf",
  "rand",
  "rayon",
  "redis",
@@ -696,7 +703,7 @@ dependencies = [
  "serde_json",
  "smallvec",
  "snap",
- "socket2",
+ "socket2 0.6.1",
  "tdigest",
  "tempfile",
  "thiserror 2.0.17",
@@ -1279,12 +1286,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "paste"
-version = "1.0.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
-
-[[package]]
 name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1398,7 +1399,7 @@ dependencies = [
  "memchr",
  "parking_lot",
  "procfs",
- "protobuf 3.7.2",
+ "protobuf",
  "thiserror 2.0.17",
 ]
 
@@ -1453,27 +1454,6 @@ dependencies = [
  "once_cell",
  "protobuf-support",
  "thiserror 1.0.69",
-]
-
-[[package]]
-name = "protobuf"
-version = "4.33.1-release"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aaa2100a0b097716858b927a50e6338693e01372f9cca8b6e6d9b4338588202e"
-dependencies = [
- "cc",
- "paste",
- "protobuf-macros",
-]
-
-[[package]]
-name = "protobuf-macros"
-version = "4.33.1-release"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e86f741d290f294e329a0233e4a034a7026e456788a5e50792bdadab90d006a"
-dependencies = [
- "quote",
- "syn",
 ]
 
 [[package]]
@@ -1590,27 +1570,31 @@ dependencies = [
 
 [[package]]
 name = "redis"
-version = "0.32.7"
+version = "0.27.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "014cc767fefab6a3e798ca45112bccad9c6e0e218fbd49720042716c73cfef44"
+checksum = "09d8f99a4090c89cc489a94833c901ead69bfbf3877b4867d5482e321ee875bc"
 dependencies = [
  "arc-swap",
+ "async-trait",
  "backon",
  "bytes",
- "cfg-if",
  "combine",
- "futures-channel",
+ "futures",
  "futures-util",
+ "itertools 0.13.0",
  "itoa",
  "num-bigint",
  "percent-encoding",
  "pin-project-lite",
  "rustls",
  "rustls-native-certs",
+ "rustls-pemfile",
+ "rustls-pki-types",
  "ryu",
  "sha1_smol",
- "socket2",
+ "socket2 0.5.10",
  "tokio",
+ "tokio-rustls",
  "tokio-util",
  "url",
 ]
@@ -1702,6 +1686,7 @@ dependencies = [
  "aws-lc-rs",
  "log",
  "once_cell",
+ "ring",
  "rustls-pki-types",
  "rustls-webpki",
  "subtle",
@@ -1710,11 +1695,12 @@ dependencies = [
 
 [[package]]
 name = "rustls-native-certs"
-version = "0.8.2"
+version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9980d917ebb0c0536119ba501e90834767bffc3d60641457fd84a1f3fd337923"
+checksum = "e5bfb394eeed242e909609f56089eecfe5fda225042e8b171791b9c95f5931e5"
 dependencies = [
  "openssl-probe",
+ "rustls-pemfile",
  "rustls-pki-types",
  "schannel",
  "security-framework",
@@ -1800,9 +1786,9 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "security-framework"
-version = "3.5.1"
+version = "2.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b3297343eaf830f66ede390ea39da1d462b6b0c1b000f420d0a83f898bbbe6ef"
+checksum = "897b2245f0b511c87893af39b033e5ca9cce68824c4d7e7630b5a1d339658d02"
 dependencies = [
  "bitflags",
  "core-foundation",
@@ -1946,6 +1932,16 @@ name = "snap"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b6b67fb9a61334225b5b790716f609cd58395f895b3fe8b328786812a40bc3b"
+
+[[package]]
+name = "socket2"
+version = "0.5.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e22376abed350d73dd1cd119b57ffccad95b4e585a7cda43e286245ce23c0678"
+dependencies = [
+ "libc",
+ "windows-sys 0.52.0",
+]
 
 [[package]]
 name = "socket2"
@@ -2109,7 +2105,7 @@ dependencies = [
  "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
- "socket2",
+ "socket2 0.6.1",
  "tokio-macros",
  "windows-sys 0.61.2",
 ]

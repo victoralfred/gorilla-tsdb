@@ -562,12 +562,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_compression_stats() {
-        let mut stats = CompressionStats::default();
-
-        stats.chunks_compressed = 10;
-        stats.bytes_original = 10000;
-        stats.bytes_compressed = 5000;
-        stats.total_compression_time_secs = 2.0;
+        let stats = CompressionStats {
+            chunks_compressed: 10,
+            bytes_original: 10000,
+            bytes_compressed: 5000,
+            total_compression_time_secs: 2.0,
+            ..Default::default()
+        };
 
         assert_eq!(stats.compression_ratio(), 0.5);
         assert_eq!(stats.avg_compression_time(), 0.2);

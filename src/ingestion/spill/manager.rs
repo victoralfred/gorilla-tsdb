@@ -320,7 +320,8 @@ mod tests {
         // Spill
         let points = sample_points();
         let file_id = manager.spill(points.clone()).await.unwrap();
-        assert!(file_id > 0 || file_id == 0);
+        // file_id is a valid identifier (u64, so always >= 0)
+        let _ = file_id;
         assert!(manager.is_active());
 
         // Recover

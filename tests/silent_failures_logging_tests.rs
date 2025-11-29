@@ -1,10 +1,10 @@
-///! Silent Failures and Logging Test Suite
-///!
-///! This test suite validates that errors are properly logged, metrics
-///! are recorded, and failures are not silently ignored. It ensures
-///! observability and debuggability in production.
-///!
-///! Run with: cargo test --test silent_failures_logging_tests
+//! Silent Failures and Logging Test Suite
+//!
+//! This test suite validates that errors are properly logged, metrics
+//! are recorded, and failures are not silently ignored. It ensures
+//! observability and debuggability in production.
+//!
+//! Run with: cargo test --test silent_failures_logging_tests
 use gorilla_tsdb::metrics;
 use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
 use gorilla_tsdb::storage::chunk::Chunk;

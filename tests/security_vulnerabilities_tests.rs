@@ -1,10 +1,10 @@
-///! Security Vulnerabilities Test Suite
-///!
-///! This test suite validates security hardening and ensures that
-///! identified vulnerabilities (SV-1 through SV-5) are properly
-///! addressed and cannot be exploited.
-///!
-///! Run with: cargo test --test security_vulnerabilities_tests
+//! Security Vulnerabilities Test Suite
+//!
+//! This test suite validates security hardening and ensures that
+//! identified vulnerabilities (SV-1 through SV-5) are properly
+//! addressed and cannot be exploited.
+//!
+//! Run with: cargo test --test security_vulnerabilities_tests
 use gorilla_tsdb::compression::gorilla::GorillaCompressor;
 use gorilla_tsdb::engine::traits::{BlockMetadata, CompressedBlock, Compressor};
 use gorilla_tsdb::security;
@@ -63,8 +63,9 @@ fn test_sv1_4_null_byte_injection() {
     );
 }
 
-/// SV-1.5: Test symlink attacks
+/// SV-1.5: Test symlink attacks (Unix only - symlinks work differently on Windows)
 #[test]
+#[cfg(unix)]
 fn test_sv1_5_symlink_attack() {
     use std::fs;
     use std::os::unix::fs::symlink;

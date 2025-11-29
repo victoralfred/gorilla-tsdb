@@ -38,6 +38,14 @@ pub mod ingestion;
 /// Provides vectorized execution, parallel processing, aggregations, and downsampling
 pub mod query;
 
+/// Background services for chunk management, compaction, monitoring, and health checks
+/// Provides service lifecycle management, graceful shutdown, and dependency ordering
+pub mod services;
+
+/// Multi-dimensional aggregation engine for space-time aggregation
+/// Provides string interning, series registry, and tag-based lookups
+pub mod aggregation;
+
 // Re-export main types
 pub use engine::{DatabaseConfig, TimeSeriesDB, TimeSeriesDBBuilder};
 pub use error::{Error, Result};

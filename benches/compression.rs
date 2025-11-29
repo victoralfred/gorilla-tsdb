@@ -1,7 +1,8 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use gorilla_tsdb::compression::GorillaCompressor;
 use gorilla_tsdb::engine::traits::Compressor;
 use gorilla_tsdb::types::DataPoint;
+use std::hint::black_box;
 
 fn create_regular_points(count: usize) -> Vec<DataPoint> {
     (0..count)
