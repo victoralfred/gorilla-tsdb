@@ -786,8 +786,8 @@ mod tests {
 
         // Check that both averages are correct
         let series_ids = result.series_ids.as_ref().unwrap();
-        for i in 0..2 {
-            if series_ids[i] == 1 {
+        for (i, &sid) in series_ids.iter().enumerate().take(2) {
+            if sid == 1 {
                 // Series 1: avg of 10, 15 = 12.5
                 assert!((result.values[i] - 12.5).abs() < 0.001);
             } else {

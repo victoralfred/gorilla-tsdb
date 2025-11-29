@@ -687,13 +687,15 @@ mod tests {
 
     #[test]
     fn test_execution_stats() {
-        let mut stats = ExecutionStats::default();
-        stats.cache_hits = 80;
-        stats.cache_misses = 20;
-        stats.rows_scanned = 1000;
-        stats.rows_returned = 100;
-        stats.chunks_read = 5;
-        stats.chunks_pruned = 15;
+        let stats = ExecutionStats {
+            cache_hits: 80,
+            cache_misses: 20,
+            rows_scanned: 1000,
+            rows_returned: 100,
+            chunks_read: 5,
+            chunks_pruned: 15,
+            ..Default::default()
+        };
 
         assert!((stats.cache_hit_ratio() - 0.8).abs() < 0.001);
         assert!((stats.selectivity() - 0.1).abs() < 0.001);

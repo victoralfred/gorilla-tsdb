@@ -290,16 +290,24 @@ mod tests {
 
     #[test]
     fn test_connection_config_validation() {
-        let mut config = ConnectionConfig::default();
-
-        config.max_connections = 0;
+        let config = ConnectionConfig {
+            max_connections: 0,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
 
-        config.max_connections = 100;
-        config.max_per_ip = 0;
+        let config = ConnectionConfig {
+            max_connections: 100,
+            max_per_ip: 0,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
 
-        config.max_per_ip = 200; // Greater than max_connections
+        let config = ConnectionConfig {
+            max_connections: 100,
+            max_per_ip: 200, // Greater than max_connections
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 

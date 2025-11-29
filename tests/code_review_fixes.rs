@@ -1,10 +1,10 @@
-///! Tests for code review findings
-///!
-///! These tests address issues identified in the code review including:
-///! - Edge case handling
-///! - Security validation
-///! - Compression edge cases
-///! - Concurrent operations
+//! Tests for code review findings
+//!
+//! These tests address issues identified in the code review including:
+//! - Edge case handling
+//! - Security validation
+//! - Compression edge cases
+//! - Concurrent operations
 use gorilla_tsdb::compression::gorilla::GorillaCompressor;
 use gorilla_tsdb::engine::traits::Compressor;
 use gorilla_tsdb::security::{validate_chunk_path, validate_series_id, validate_timestamp};

@@ -32,7 +32,7 @@ async fn benchmark_single_point_write_latency() {
 
     let config = SealConfig {
         max_points: 1_000_000,
-        max_duration_ms: 3600_000,
+        max_duration_ms: 3_600_000,
         max_size_bytes: 100 * 1024 * 1024,
     };
 
@@ -100,7 +100,7 @@ async fn benchmark_batch_write_throughput() {
     for batch_size in batch_sizes {
         let config = SealConfig {
             max_points: batch_size + 1000,
-            max_duration_ms: 3600_000,
+            max_duration_ms: 3_600_000,
             max_size_bytes: 1024 * 1024 * 1024,
         };
 
@@ -600,7 +600,7 @@ async fn benchmark_memory_efficiency() {
 
     let config = SealConfig {
         max_points: 10_000_001,
-        max_duration_ms: 3600_000,
+        max_duration_ms: 3_600_000,
         max_size_bytes: 1024 * 1024 * 1024,
     };
 
@@ -667,7 +667,7 @@ async fn benchmark_summary_report() {
     // Write throughput
     let config = SealConfig {
         max_points: 1_000_001,
-        max_duration_ms: 3600_000,
+        max_duration_ms: 3_600_000,
         max_size_bytes: 1024 * 1024 * 1024,
     };
     let chunk = Arc::new(ActiveChunk::new(1, 1_000_001, config));

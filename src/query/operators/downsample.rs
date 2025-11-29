@@ -521,7 +521,7 @@ mod tests {
         let result = downsample.next_batch(&mut ctx).unwrap().unwrap();
 
         // LTTB should preserve the peaks (they form large triangles)
-        assert!(result.values.iter().any(|&v| v == 1000.0));
+        assert!(result.values.contains(&1000.0));
     }
 
     #[test]
@@ -551,8 +551,8 @@ mod tests {
         let result = downsample.next_batch(&mut ctx).unwrap().unwrap();
 
         // M4 should preserve min and max
-        let has_min = result.values.iter().any(|&v| v == 0.0);
-        let has_max = result.values.iter().any(|&v| v == 200.0);
+        let has_min = result.values.contains(&0.0);
+        let has_max = result.values.contains(&200.0);
         assert!(has_min, "M4 should preserve minimum");
         assert!(has_max, "M4 should preserve maximum");
     }

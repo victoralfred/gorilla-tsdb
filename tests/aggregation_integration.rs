@@ -394,7 +394,7 @@ fn test_query_builder() {
     let query = AggQueryBuilder::new("cpu_usage")
         .with_tag("datacenter", "us-east")
         .with_tag("env", "prod")
-        .time_range(0, 3600_000_000_000)
+        .time_range(0, 3_600_000_000_000)
         .aggregate(AggregateFunction::Avg)
         .window_size(Duration::from_secs(60))
         .group_by(&["host"])

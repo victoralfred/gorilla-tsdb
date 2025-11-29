@@ -291,11 +291,11 @@ fn test_issue8_writer_reader_synchronization() {
     let buffer = writer.finish();
 
     let mut reader = BitReader::new(&buffer);
-    assert_eq!(reader.read_bit().unwrap(), true);
+    assert!(reader.read_bit().unwrap());
     assert_eq!(reader.read_bits(3).unwrap(), 0b101);
-    assert_eq!(reader.read_bit().unwrap(), false);
+    assert!(!reader.read_bit().unwrap());
     assert_eq!(reader.read_bits(2).unwrap(), 0b11);
-    assert_eq!(reader.read_bit().unwrap(), true);
+    assert!(reader.read_bit().unwrap());
 }
 
 /// ISSUE #9: Randomized Fuzzing Shows Non-Deterministic Failures

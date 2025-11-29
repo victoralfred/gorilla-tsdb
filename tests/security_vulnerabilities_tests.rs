@@ -1,10 +1,10 @@
-///! Security Vulnerabilities Test Suite
-///!
-///! This test suite validates security hardening and ensures that
-///! identified vulnerabilities (SV-1 through SV-5) are properly
-///! addressed and cannot be exploited.
-///!
-///! Run with: cargo test --test security_vulnerabilities_tests
+//! Security Vulnerabilities Test Suite
+//!
+//! This test suite validates security hardening and ensures that
+//! identified vulnerabilities (SV-1 through SV-5) are properly
+//! addressed and cannot be exploited.
+//!
+//! Run with: cargo test --test security_vulnerabilities_tests
 use gorilla_tsdb::compression::gorilla::GorillaCompressor;
 use gorilla_tsdb::engine::traits::{BlockMetadata, CompressedBlock, Compressor};
 use gorilla_tsdb::security;

@@ -454,7 +454,7 @@ mod tests {
         match result.unwrap() {
             Query::Select(q) => {
                 let duration = q.time_range.end - q.time_range.start;
-                assert!(duration >= 299_000_000_000 && duration <= 301_000_000_000);
+                assert!((299_000_000_000..=301_000_000_000).contains(&duration));
             }
             _ => panic!("Expected Select query"),
         }

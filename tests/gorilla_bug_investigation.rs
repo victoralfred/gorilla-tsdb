@@ -38,11 +38,11 @@ async fn test_range_boundary_values() {
         let compressed = compressor
             .compress(&points)
             .await
-            .expect(&format!("Compression failed for {}", desc));
+            .unwrap_or_else(|_| panic!("Compression failed for {}", desc));
         let decompressed = compressor
             .decompress(&compressed)
             .await
-            .expect(&format!("Decompression failed for {}", desc));
+            .unwrap_or_else(|_| panic!("Decompression failed for {}", desc));
 
         assert_eq!(decompressed, points, "Round-trip failed for {}", desc);
     }
@@ -198,11 +198,11 @@ async fn test_xor_value_patterns() {
         let compressed = compressor
             .compress(&points)
             .await
-            .expect(&format!("Compression failed for {}", desc));
+            .unwrap_or_else(|_| panic!("Compression failed for {}", desc));
         let decompressed = compressor
             .decompress(&compressed)
             .await
-            .expect(&format!("Decompression failed for {}", desc));
+            .unwrap_or_else(|_| panic!("Decompression failed for {}", desc));
 
         assert_eq!(decompressed, points, "XOR pattern {} failed", desc);
     }

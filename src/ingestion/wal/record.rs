@@ -360,7 +360,10 @@ mod tests {
         let mut buf = Vec::new();
         let written = record.write_to(&mut buf).unwrap();
 
-        assert!(written % 8 == 0, "Written size should be 8-byte aligned");
+        assert!(
+            written.is_multiple_of(8),
+            "Written size should be 8-byte aligned"
+        );
 
         let mut cursor = std::io::Cursor::new(buf);
         let recovered = WalRecord::read_from(&mut cursor).unwrap();
@@ -399,7 +402,7 @@ mod tests {
         let points = sample_points();
         let record = WalRecord::from_points(&points);
 
-        assert!(record.disk_size() % 8 == 0);
+        assert!(record.disk_size().is_multiple_of(8));
     }
 
     #[test]

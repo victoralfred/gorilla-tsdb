@@ -514,8 +514,10 @@ mod tests {
 
     #[test]
     fn test_ingestion_config_validation() {
-        let mut config = IngestionConfig::default();
-        config.channel_buffer_size = 0;
+        let config = IngestionConfig {
+            channel_buffer_size: 0,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 }

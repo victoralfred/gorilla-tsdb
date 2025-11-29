@@ -306,7 +306,7 @@ mod tests {
 
         let batch = filter.next_batch(&mut ctx).unwrap().unwrap();
         assert_eq!(batch.len(), 11); // 20..30 inclusive
-        assert!(batch.values.iter().all(|&v| v >= 20.0 && v <= 30.0));
+        assert!(batch.values.iter().all(|&v| (20.0..=30.0).contains(&v)));
     }
 
     #[test]
@@ -321,7 +321,7 @@ mod tests {
 
         let batch = filter.next_batch(&mut ctx).unwrap().unwrap();
         assert_eq!(batch.len(), 19); // 0..9 (10 values) + 91..99 (9 values)
-        assert!(batch.values.iter().all(|&v| v < 10.0 || v > 90.0));
+        assert!(batch.values.iter().all(|&v| !(10.0..=90.0).contains(&v)));
     }
 
     #[test]

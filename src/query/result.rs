@@ -105,12 +105,16 @@ impl QueryResult {
     }
 
     /// Format result to string
+    ///
+    /// Note: For Protobuf format, this returns a base64-encoded string.
+    /// Use `to_protobuf_bytes()` for binary output.
     pub fn format(&self, format: ResultFormat) -> String {
         match format {
             ResultFormat::Json => self.to_json(),
             ResultFormat::JsonPretty => self.to_json_pretty(),
             ResultFormat::Csv => self.to_csv(),
             ResultFormat::Table => self.to_table(),
+            ResultFormat::Protobuf => self.to_protobuf_string(),
         }
     }
 
@@ -230,6 +234,83 @@ impl QueryResult {
         ));
 
         output
+    }
+
+    /// Convert to Protocol Buffers binary format
+    ///
+    /// Returns the binary protobuf representation of the query result.
+    /// The format uses a simple wire format compatible with standard protobuf parsers.
+    pub fn to_protobuf_bytes(&self) -> Vec<u8> {
+        // Simple protobuf-like wire format:
+        // - Field 1 (metadata): varint row_count, varint execution_time_us
+        // - Field 2 (data): repeated rows with (varint timestamp, double value, varint series_id)
+        let mut bytes = Vec::new();
+
+        // Write row count (field 1, varint)
+        bytes.push(0x08); // field 1, wire type 0 (varint)
+        Self::write_varint(&mut bytes, self.metadata.row_count as u64);
+
+        // Write execution time (field 2, varint)
+        bytes.push(0x10); // field 2, wire type 0 (varint)
+        Self::write_varint(&mut bytes, self.metadata.execution_time_us);
+
+        // Write data rows
+        if let ResultData::Rows(rows) = &self.data {
+            for row in rows {
+                // Each row is a nested message (field 3)
+                bytes.push(0x1a); // field 3, wire type 2 (length-delimited)
+                let row_bytes = Self::encode_row(row);
+                Self::write_varint(&mut bytes, row_bytes.len() as u64);
+                bytes.extend(row_bytes);
+            }
+        }
+
+        bytes
+    }
+
+    /// Convert to Protocol Buffers as base64-encoded string
+    ///
+    /// Useful when binary transport is not available.
+    pub fn to_protobuf_string(&self) -> String {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        STANDARD.encode(self.to_protobuf_bytes())
+    }
+
+    /// Helper to write a varint
+    fn write_varint(bytes: &mut Vec<u8>, mut value: u64) {
+        loop {
+            let mut byte = (value & 0x7F) as u8;
+            value >>= 7;
+            if value != 0 {
+                byte |= 0x80;
+            }
+            bytes.push(byte);
+            if value == 0 {
+                break;
+            }
+        }
+    }
+
+    /// Helper to encode a single row
+    fn encode_row(row: &ResultRow) -> Vec<u8> {
+        let mut bytes = Vec::new();
+
+        // Field 1: timestamp (varint, signed zigzag)
+        bytes.push(0x08);
+        let zigzag = ((row.timestamp << 1) ^ (row.timestamp >> 63)) as u64;
+        Self::write_varint(&mut bytes, zigzag);
+
+        // Field 2: value (fixed64, as f64 bits)
+        bytes.push(0x11); // field 2, wire type 1 (64-bit)
+        bytes.extend(row.value.to_le_bytes());
+
+        // Field 3: series_id (varint, optional)
+        if let Some(sid) = row.series_id {
+            bytes.push(0x18); // field 3, wire type 0 (varint)
+            Self::write_varint(&mut bytes, sid as u64);
+        }
+
+        bytes
     }
 }
 
@@ -429,6 +510,8 @@ pub enum ResultFormat {
     Csv,
     /// ASCII table (for CLI)
     Table,
+    /// Protocol Buffers binary format
+    Protobuf,
 }
 
 impl fmt::Display for ResultFormat {
@@ -438,6 +521,7 @@ impl fmt::Display for ResultFormat {
             ResultFormat::JsonPretty => write!(f, "json-pretty"),
             ResultFormat::Csv => write!(f, "csv"),
             ResultFormat::Table => write!(f, "table"),
+            ResultFormat::Protobuf => write!(f, "protobuf"),
         }
     }
 }
@@ -451,6 +535,7 @@ impl std::str::FromStr for ResultFormat {
             "json-pretty" | "jsonpretty" => Ok(ResultFormat::JsonPretty),
             "csv" => Ok(ResultFormat::Csv),
             "table" => Ok(ResultFormat::Table),
+            "protobuf" | "proto" | "pb" => Ok(ResultFormat::Protobuf),
             _ => Err(format!("unknown format: {}", s)),
         }
     }
@@ -552,6 +637,43 @@ mod tests {
             "table".parse::<ResultFormat>().unwrap(),
             ResultFormat::Table
         );
+        assert_eq!(
+            "protobuf".parse::<ResultFormat>().unwrap(),
+            ResultFormat::Protobuf
+        );
+        assert_eq!(
+            "proto".parse::<ResultFormat>().unwrap(),
+            ResultFormat::Protobuf
+        );
+        assert_eq!(
+            "pb".parse::<ResultFormat>().unwrap(),
+            ResultFormat::Protobuf
+        );
+    }
+
+    #[test]
+    fn test_protobuf_output() {
+        let result = QueryResult::from_rows(vec![
+            ResultRow::new(1000, 42.5).with_series(1),
+            ResultRow::new(2000, 43.5).with_series(2),
+        ]);
+
+        // Test binary output is non-empty
+        let bytes = result.to_protobuf_bytes();
+        assert!(!bytes.is_empty());
+
+        // Test base64 output
+        let proto_str = result.to_protobuf_string();
+        assert!(!proto_str.is_empty());
+
+        // Verify it's valid base64
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        let decoded = STANDARD.decode(&proto_str).unwrap();
+        assert_eq!(decoded, bytes);
+
+        // Test format() method
+        let formatted = result.format(ResultFormat::Protobuf);
+        assert_eq!(formatted, proto_str);
     }
 
     #[test]

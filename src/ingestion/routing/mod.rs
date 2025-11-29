@@ -385,7 +385,7 @@ mod tests {
     #[test]
     fn test_route_batch() {
         let router = HashRouter::new(4);
-        let keys = vec!["a", "b", "c", "d", "e", "f", "g", "h"];
+        let keys = ["a", "b", "c", "d", "e", "f", "g", "h"];
 
         let batches = route_batch(&router, keys.iter().copied());
 

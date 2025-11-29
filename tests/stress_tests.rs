@@ -1,10 +1,10 @@
-///! Stress tests for production readiness validation
-///!
-///! These tests simulate real-world load patterns and edge cases to validate
-///! system behavior under stress. Run with --release flag for realistic performance.
-///!
-///! Usage:
-///!   cargo test --release --test stress_tests -- --ignored --test-threads=1
+//! Stress tests for production readiness validation
+//!
+//! These tests simulate real-world load patterns and edge cases to validate
+//! system behavior under stress. Run with --release flag for realistic performance.
+//!
+//! Usage:
+//!   cargo test --release --test stress_tests -- --ignored --test-threads=1
 use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
 use gorilla_tsdb::storage::chunk::Chunk;
 use gorilla_tsdb::types::DataPoint;
@@ -65,7 +65,7 @@ async fn test_sustained_high_throughput() {
         let batch_duration = batch_start.elapsed();
         let current_rate = POINTS_PER_BATCH as f64 / batch_duration.as_secs_f64();
 
-        if total_points % 1_000_000 == 0 {
+        if total_points.is_multiple_of(1_000_000) {
             println!(
                 "   ✓ {} points processed (current rate: {:.0} pts/sec)",
                 total_points, current_rate
@@ -101,7 +101,7 @@ async fn test_concurrent_write_stress() {
 
     let config = SealConfig {
         max_points: 10_000_000,
-        max_duration_ms: 3600_000,
+        max_duration_ms: 3_600_000,
         max_size_bytes: 1024 * 1024 * 1024, // 1GB
     };
 
@@ -221,7 +221,7 @@ async fn test_memory_stability() {
         chunk.seal(path.into()).await.unwrap();
         total_chunks_sealed += 1;
 
-        if total_chunks_sealed % 10 == 0 {
+        if total_chunks_sealed.is_multiple_of(10) {
             println!(
                 "   ✓ {} chunks sealed ({:.1}s elapsed)",
                 total_chunks_sealed,

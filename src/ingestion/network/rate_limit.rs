@@ -457,13 +457,17 @@ mod tests {
 
     #[test]
     fn test_rate_limit_config_validation() {
-        let mut config = RateLimitConfig::default();
-
-        config.points_per_sec_per_ip = 0;
+        let config = RateLimitConfig {
+            points_per_sec_per_ip: 0,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
 
-        config.points_per_sec_per_ip = 100;
-        config.burst_multiplier = 0.5;
+        let config = RateLimitConfig {
+            points_per_sec_per_ip: 100,
+            burst_multiplier: 0.5,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 

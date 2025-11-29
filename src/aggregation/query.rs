@@ -813,7 +813,7 @@ mod tests {
     #[test]
     fn test_query_builder_with_window() {
         let query = AggQueryBuilder::new("http_requests")
-            .time_range(0, 3600_000_000_000) // 1 hour in nanos
+            .time_range(0, 3_600_000_000_000) // 1 hour in nanos
             .aggregate(AggregateFunction::Sum)
             .window_size(Duration::from_secs(60))
             .build()
