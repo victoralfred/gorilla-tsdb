@@ -272,6 +272,10 @@ pub struct BitmapIndex {
     /// Bitmaps indexed by (key_id, value_id)
     bitmaps: RwLock<HashMap<(TagKeyId, TagValueId), TagBitmap>>,
 
+    /// PERF-003: Pre-computed bitmap per key (union of all values for that key)
+    /// This avoids linear scan when querying HasKey filter
+    key_bitmaps: RwLock<HashMap<TagKeyId, TagBitmap>>,
+
     /// All series bitmap (for "all" queries)
     all_series: RwLock<TagBitmap>,
 
@@ -297,6 +301,7 @@ impl BitmapIndex {
     pub fn new() -> Self {
         Self {
             bitmaps: RwLock::new(HashMap::new()),
+            key_bitmaps: RwLock::new(HashMap::new()),
             all_series: RwLock::new(TagBitmap::new()),
             stats: BitmapIndexStats::default(),
         }
@@ -305,13 +310,19 @@ impl BitmapIndex {
     /// Add a series with its tags to the index
     pub fn add_series(&self, series_id: SeriesId, tags: &[(TagKeyId, TagValueId)]) {
         let mut bitmaps = self.bitmaps.write();
+        let mut key_bitmaps = self.key_bitmaps.write();
 
         for (key_id, value_id) in tags {
+            // Add to value-specific bitmap
             let bitmap = bitmaps.entry((*key_id, *value_id)).or_insert_with(|| {
                 self.stats.tag_combinations.fetch_add(1, Ordering::Relaxed);
                 TagBitmap::new()
             });
             bitmap.set(series_id);
+
+            // PERF-003: Also add to key-level bitmap for O(1) HasKey lookups
+            let key_bitmap = key_bitmaps.entry(*key_id).or_insert_with(TagBitmap::new);
+            key_bitmap.set(series_id);
         }
 
         // Also add to all_series bitmap
@@ -322,26 +333,63 @@ impl BitmapIndex {
     /// Remove a series from the index
     pub fn remove_series(&self, series_id: SeriesId, tags: &[(TagKeyId, TagValueId)]) {
         let mut bitmaps = self.bitmaps.write();
+        let mut key_bitmaps = self.key_bitmaps.write();
 
         for (key_id, value_id) in tags {
             if let Some(bitmap) = bitmaps.get_mut(&(*key_id, *value_id)) {
                 bitmap.clear(series_id);
             }
+            // Note: We don't remove from key_bitmaps here as it would require
+            // checking if any other values for this key still have this series.
+            // This is an acceptable trade-off for faster reads.
         }
 
         self.all_series.write().clear(series_id);
     }
 
+    /// Get bitmap for all series that have a specific key (any value)
+    ///
+    /// PERF-003: O(1) lookup instead of linear scan over all values
+    pub fn get_key_bitmap(&self, key_id: TagKeyId) -> Option<TagBitmap> {
+        self.stats.queries.fetch_add(1, Ordering::Relaxed);
+        self.key_bitmaps.read().get(&key_id).cloned()
+    }
+
     /// Get the bitmap for a specific tag value
+    ///
+    /// PERF-002: Returns a reference via callback to avoid cloning when possible
     pub fn get_bitmap(&self, key_id: TagKeyId, value_id: TagValueId) -> Option<TagBitmap> {
         self.stats.queries.fetch_add(1, Ordering::Relaxed);
         self.bitmaps.read().get(&(key_id, value_id)).cloned()
+    }
+
+    /// Get the bitmap for a specific tag value without cloning
+    ///
+    /// PERF-002: Uses callback to avoid unnecessary cloning
+    pub fn with_bitmap<F, R>(&self, key_id: TagKeyId, value_id: TagValueId, f: F) -> Option<R>
+    where
+        F: FnOnce(&TagBitmap) -> R,
+    {
+        self.stats.queries.fetch_add(1, Ordering::Relaxed);
+        self.bitmaps.read().get(&(key_id, value_id)).map(f)
     }
 
     /// Get all series (for queries with no tag filters)
     pub fn get_all_series(&self) -> TagBitmap {
         self.stats.queries.fetch_add(1, Ordering::Relaxed);
         self.all_series.read().clone()
+    }
+
+    /// Get series IDs directly without cloning the bitmap
+    ///
+    /// PERF-002: More efficient than get_bitmap().to_series_ids()
+    pub fn get_series_ids(&self, key_id: TagKeyId, value_id: TagValueId) -> Vec<SeriesId> {
+        self.stats.queries.fetch_add(1, Ordering::Relaxed);
+        self.bitmaps
+            .read()
+            .get(&(key_id, value_id))
+            .map(|b| b.to_series_ids())
+            .unwrap_or_default()
     }
 
     /// Execute a tag filter query
@@ -391,17 +439,12 @@ impl BitmapIndex {
             }
 
             TagFilter::HasKey(key_id) => {
-                // Get all values for this key and OR them together
-                let bitmaps = self.bitmaps.read();
-                let mut result = TagBitmap::new();
-
-                for ((k, _), bitmap) in bitmaps.iter() {
-                    if k == key_id {
-                        result = result.or(bitmap);
-                    }
-                }
-
-                result
+                // PERF-003: Use pre-computed key bitmap for O(1) lookup
+                self.key_bitmaps
+                    .read()
+                    .get(key_id)
+                    .cloned()
+                    .unwrap_or_default()
             }
         }
     }

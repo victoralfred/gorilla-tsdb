@@ -265,70 +265,105 @@ impl LabelTracker {
 // ============================================================================
 
 /// Token bucket rate limiter for series creation
+///
+/// SEC-004: Uses proper atomic operations to prevent race conditions
 #[derive(Debug)]
 struct RateLimiter {
-    /// Tokens available
-    tokens: AtomicU64,
+    /// Tokens available (scaled by 1000 for sub-token precision)
+    tokens_scaled: AtomicU64,
 
-    /// Maximum tokens (bucket size)
-    max_tokens: u64,
+    /// Maximum tokens (bucket size, scaled)
+    max_tokens_scaled: u64,
 
-    /// Last refill time
-    last_refill: RwLock<Instant>,
+    /// Last refill timestamp in milliseconds
+    last_refill_ms: AtomicU64,
 
-    /// Refill rate (tokens per second)
-    refill_rate: f64,
+    /// Refill rate (tokens per millisecond, scaled by 1000)
+    refill_rate_scaled: u64,
 }
 
 impl RateLimiter {
+    const SCALE: u64 = 1000;
+
     fn new(max_per_minute: usize) -> Self {
-        let max_tokens = max_per_minute as u64;
+        let max_tokens_scaled = (max_per_minute as u64) * Self::SCALE;
+        // tokens per ms = max_per_minute / 60000
+        let refill_rate_scaled = (max_per_minute as u64 * Self::SCALE) / 60_000;
+
         Self {
-            tokens: AtomicU64::new(max_tokens),
-            max_tokens,
-            last_refill: RwLock::new(Instant::now()),
-            refill_rate: max_per_minute as f64 / 60.0,
+            tokens_scaled: AtomicU64::new(max_tokens_scaled),
+            max_tokens_scaled,
+            last_refill_ms: AtomicU64::new(Self::current_time_ms()),
+            refill_rate_scaled: refill_rate_scaled.max(1), // At least 1 to ensure progress
         }
     }
 
-    /// Try to acquire a token, return true if successful
-    fn try_acquire(&self) -> bool {
-        self.refill();
-
-        // Use fetch_update for atomic check-and-decrement
-        self.tokens
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |tokens| {
-                if tokens > 0 {
-                    Some(tokens - 1)
-                } else {
-                    None
-                }
-            })
-            .is_ok()
+    fn current_time_ms() -> u64 {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64
     }
 
-    /// Refill tokens based on elapsed time
-    fn refill(&self) {
-        let mut last_refill = self.last_refill.write();
-        let elapsed = last_refill.elapsed();
+    /// Try to acquire a token, return true if successful
+    /// SEC-004: All operations are atomic to prevent race conditions
+    fn try_acquire(&self) -> bool {
+        // Atomically refill and try to acquire in one operation
+        let now_ms = Self::current_time_ms();
 
-        if elapsed >= Duration::from_millis(100) {
-            // Calculate new tokens to add
-            let new_tokens = (elapsed.as_secs_f64() * self.refill_rate) as u64;
+        loop {
+            let last_ms = self.last_refill_ms.load(Ordering::Acquire);
+            let elapsed_ms = now_ms.saturating_sub(last_ms);
 
-            if new_tokens > 0 {
-                let current = self.tokens.load(Ordering::Relaxed);
-                let new_total = (current + new_tokens).min(self.max_tokens);
-                self.tokens.store(new_total, Ordering::Relaxed);
-                *last_refill = Instant::now();
+            // Calculate tokens to add
+            let tokens_to_add = elapsed_ms * self.refill_rate_scaled;
+
+            // Try to update last_refill atomically
+            if tokens_to_add > 0 {
+                if self
+                    .last_refill_ms
+                    .compare_exchange(last_ms, now_ms, Ordering::AcqRel, Ordering::Relaxed)
+                    .is_ok()
+                {
+                    // Successfully claimed the refill, add tokens
+                    let _ = self.tokens_scaled.fetch_update(
+                        Ordering::AcqRel,
+                        Ordering::Relaxed,
+                        |current| Some((current + tokens_to_add).min(self.max_tokens_scaled)),
+                    );
+                }
+                // If CAS failed, another thread did the refill, continue to acquire
+            }
+
+            // Try to acquire a token atomically
+            match self.tokens_scaled.fetch_update(
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+                |tokens| {
+                    if tokens >= Self::SCALE {
+                        Some(tokens - Self::SCALE)
+                    } else {
+                        None
+                    }
+                },
+            ) {
+                Ok(_) => return true,
+                Err(_) => return false,
             }
         }
     }
 
     /// Get current available tokens
     fn available(&self) -> u64 {
-        self.refill();
-        self.tokens.load(Ordering::Relaxed)
+        // Trigger a refill check first
+        let now_ms = Self::current_time_ms();
+        let last_ms = self.last_refill_ms.load(Ordering::Acquire);
+        let elapsed_ms = now_ms.saturating_sub(last_ms);
+        let tokens_to_add = elapsed_ms * self.refill_rate_scaled;
+
+        let current = self.tokens_scaled.load(Ordering::Relaxed);
+        ((current + tokens_to_add).min(self.max_tokens_scaled)) / Self::SCALE
     }
 }
 
@@ -417,8 +452,15 @@ impl CardinalityController {
     }
 
     /// Remove a series (decrement counter)
+    ///
+    /// ERR-001: Uses saturating subtraction to prevent underflow
     pub fn remove_series(&self) {
-        self.active_series.fetch_sub(1, Ordering::Relaxed);
+        // Use fetch_update to ensure we don't underflow
+        let _ = self.active_series.fetch_update(
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+            |current| Some(current.saturating_sub(1)),
+        );
     }
 
     /// Observe a label value
@@ -548,9 +590,14 @@ impl CardinalityController {
 
         let memory_bytes: usize = trackers.values().map(|t| t.memory_bytes()).sum();
 
+        // Calculate series created this window based on available tokens
+        let max_tokens = self.rate_limiter.max_tokens_scaled / RateLimiter::SCALE;
+        let available = self.rate_limiter.available();
+        let series_this_window = max_tokens.saturating_sub(available);
+
         CardinalityStats {
             active_series: self.active_series.load(Ordering::Relaxed),
-            series_this_window: self.rate_limiter.max_tokens - self.rate_limiter.available(),
+            series_this_window,
             tracked_labels: trackers.len(),
             high_cardinality_labels: high_cardinality,
             rejected_series: self.rejected_count.load(Ordering::Relaxed),
@@ -662,18 +709,39 @@ pub struct CardinalityEstimator {
 }
 
 impl CardinalityEstimator {
+    /// Minimum allowed k value to prevent division by zero
+    pub const MIN_K: usize = 1;
+
     /// Create a new estimator with specified accuracy
     ///
     /// Higher k = higher accuracy but more memory.
     /// - k=64: ~15% error
     /// - k=256: ~7% error
     /// - k=1024: ~3% error
+    ///
+    /// # Panics
+    /// Panics if k < MIN_K (1)
     pub fn new(k: usize) -> Self {
+        // EDGE-002: Prevent k=0 which would cause division by zero
+        assert!(k >= Self::MIN_K, "k must be at least {} to prevent division by zero", Self::MIN_K);
+
         Self {
             min_values: Vec::with_capacity(k + 1),
             k,
             count: 0,
         }
+    }
+
+    /// Create a new estimator with specified accuracy, returning None if k is invalid
+    pub fn try_new(k: usize) -> Option<Self> {
+        if k < Self::MIN_K {
+            return None;
+        }
+        Some(Self {
+            min_values: Vec::with_capacity(k + 1),
+            k,
+            count: 0,
+        })
     }
 
     /// Create with default k=256 (~7% error)

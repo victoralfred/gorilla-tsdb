@@ -192,6 +192,12 @@ pub struct TagResolverConfig {
 
     /// Enable regex matching (can be expensive)
     pub enable_regex: bool,
+
+    /// Maximum regex pattern length (SEC-002: ReDoS protection)
+    pub max_regex_pattern_len: usize,
+
+    /// Maximum cache entries (SEC-005: prevent unbounded growth)
+    pub max_cache_entries: usize,
 }
 
 impl Default for TagResolverConfig {
@@ -201,6 +207,8 @@ impl Default for TagResolverConfig {
             enable_cache: true,
             cache_ttl_secs: 60,
             enable_regex: true,
+            max_regex_pattern_len: 256,  // SEC-002: Limit regex pattern size
+            max_cache_entries: 10_000,   // SEC-005: Limit cache size
         }
     }
 }
@@ -543,8 +551,21 @@ impl TagResolver {
         pattern: &str,
         tag_dict: &TagDictionary,
     ) -> Result<Option<TagFilter>> {
-        // Compile regex
-        let regex = match regex::Regex::new(pattern) {
+        // SEC-002: ReDoS protection - limit pattern length
+        if pattern.len() > self.config.max_regex_pattern_len {
+            self.stats.regex_errors.fetch_add(1, Ordering::Relaxed);
+            return Err(Error::Index(IndexError::QueryError(format!(
+                "Regex pattern too long: {} chars (max: {})",
+                pattern.len(),
+                self.config.max_regex_pattern_len
+            ))));
+        }
+
+        // Compile regex with size limit - use regex builder for safety
+        let regex = match regex::RegexBuilder::new(pattern)
+            .size_limit(1024 * 1024) // 1MB compiled size limit
+            .build()
+        {
             Ok(r) => r,
             Err(e) => {
                 self.stats.regex_errors.fetch_add(1, Ordering::Relaxed);
@@ -646,6 +667,25 @@ impl TagResolver {
     fn update_cache(&self, matcher: &TagMatcher, results: Vec<SeriesId>) {
         let hash = self.hash_matcher(matcher);
         let mut cache = self.cache.write();
+
+        // SEC-005: Enforce cache size limit - evict oldest entries if needed
+        if cache.len() >= self.config.max_cache_entries {
+            // Simple eviction: remove entries older than TTL first
+            let now = std::time::Instant::now();
+            let ttl = std::time::Duration::from_secs(self.config.cache_ttl_secs);
+            cache.retain(|_, (ts, _)| now.duration_since(*ts) < ttl);
+
+            // If still too full, remove oldest half
+            if cache.len() >= self.config.max_cache_entries {
+                let mut entries: Vec<_> = cache.iter().map(|(k, (ts, _))| (*k, *ts)).collect();
+                entries.sort_by_key(|(_, ts)| *ts);
+                let to_remove = entries.len() / 2;
+                for (key, _) in entries.into_iter().take(to_remove) {
+                    cache.remove(&key);
+                }
+            }
+        }
+
         cache.insert(hash, (std::time::Instant::now(), results));
     }
 

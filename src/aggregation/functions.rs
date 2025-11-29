@@ -222,36 +222,84 @@ pub fn moving_sum(values: &[f64], window_size: usize) -> Vec<f64> {
 }
 
 /// Calculate moving minimum over a sliding window
+///
+/// PERF-001: Uses monotonic deque for O(n) total complexity instead of O(n*w)
 pub fn moving_min(values: &[f64], window_size: usize) -> Vec<f64> {
     if values.is_empty() || window_size == 0 {
         return Vec::new();
     }
 
     let mut result = Vec::with_capacity(values.len());
+    // Deque stores (index, value) pairs where values are monotonically increasing
+    let mut deque: std::collections::VecDeque<(usize, f64)> = std::collections::VecDeque::new();
 
     for i in 0..values.len() {
-        let start = i.saturating_sub(window_size - 1);
-        let window = &values[start..=i];
-        let min = window.iter().cloned().fold(f64::INFINITY, f64::min);
-        result.push(min);
+        let value = values[i];
+
+        // Remove elements outside the window from front
+        while let Some(&(idx, _)) = deque.front() {
+            if i >= window_size && idx <= i - window_size {
+                deque.pop_front();
+            } else {
+                break;
+            }
+        }
+
+        // Remove elements larger than current from back (they can never be minimum)
+        while let Some(&(_, v)) = deque.back() {
+            if v >= value {
+                deque.pop_back();
+            } else {
+                break;
+            }
+        }
+
+        deque.push_back((i, value));
+
+        // Front of deque is always the minimum
+        result.push(deque.front().unwrap().1);
     }
 
     result
 }
 
 /// Calculate moving maximum over a sliding window
+///
+/// PERF-001: Uses monotonic deque for O(n) total complexity instead of O(n*w)
 pub fn moving_max(values: &[f64], window_size: usize) -> Vec<f64> {
     if values.is_empty() || window_size == 0 {
         return Vec::new();
     }
 
     let mut result = Vec::with_capacity(values.len());
+    // Deque stores (index, value) pairs where values are monotonically decreasing
+    let mut deque: std::collections::VecDeque<(usize, f64)> = std::collections::VecDeque::new();
 
     for i in 0..values.len() {
-        let start = i.saturating_sub(window_size - 1);
-        let window = &values[start..=i];
-        let max = window.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-        result.push(max);
+        let value = values[i];
+
+        // Remove elements outside the window from front
+        while let Some(&(idx, _)) = deque.front() {
+            if i >= window_size && idx <= i - window_size {
+                deque.pop_front();
+            } else {
+                break;
+            }
+        }
+
+        // Remove elements smaller than current from back (they can never be maximum)
+        while let Some(&(_, v)) = deque.back() {
+            if v <= value {
+                deque.pop_back();
+            } else {
+                break;
+            }
+        }
+
+        deque.push_back((i, value));
+
+        // Front of deque is always the maximum
+        result.push(deque.front().unwrap().1);
     }
 
     result
@@ -816,5 +864,56 @@ mod tests {
         label_join(&mut labels, "location", "-", &["region", "zone", "cluster"]);
 
         assert_eq!(labels.get("location").unwrap(), "us-east-prod");
+    }
+
+    #[test]
+    fn test_moving_min() {
+        let values = vec![5.0, 3.0, 8.0, 1.0, 4.0, 2.0];
+        let result = moving_min(&values, 3);
+
+        // Window 1: [5] -> min=5
+        // Window 2: [5,3] -> min=3
+        // Window 3: [5,3,8] -> min=3
+        // Window 4: [3,8,1] -> min=1
+        // Window 5: [8,1,4] -> min=1
+        // Window 6: [1,4,2] -> min=1
+        assert_eq!(result, vec![5.0, 3.0, 3.0, 1.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn test_moving_max() {
+        let values = vec![1.0, 3.0, 2.0, 5.0, 4.0, 2.0];
+        let result = moving_max(&values, 3);
+
+        // Window 1: [1] -> max=1
+        // Window 2: [1,3] -> max=3
+        // Window 3: [1,3,2] -> max=3
+        // Window 4: [3,2,5] -> max=5
+        // Window 5: [2,5,4] -> max=5
+        // Window 6: [5,4,2] -> max=5
+        assert_eq!(result, vec![1.0, 3.0, 3.0, 5.0, 5.0, 5.0]);
+    }
+
+    #[test]
+    fn test_moving_min_max_edge_cases() {
+        // Empty input
+        assert!(moving_min(&[], 3).is_empty());
+        assert!(moving_max(&[], 3).is_empty());
+
+        // Window size 0
+        assert!(moving_min(&[1.0, 2.0], 0).is_empty());
+        assert!(moving_max(&[1.0, 2.0], 0).is_empty());
+
+        // Window size 1
+        let values = vec![3.0, 1.0, 4.0, 1.0, 5.0];
+        assert_eq!(moving_min(&values, 1), values);
+        assert_eq!(moving_max(&values, 1), values);
+
+        // Window larger than input
+        let values = vec![3.0, 1.0, 4.0];
+        let min_result = moving_min(&values, 5);
+        assert_eq!(min_result, vec![3.0, 1.0, 1.0]);
+        let max_result = moving_max(&values, 5);
+        assert_eq!(max_result, vec![3.0, 3.0, 4.0]);
     }
 }
