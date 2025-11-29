@@ -220,70 +220,227 @@ pub trait Operator: Send {
 
 /// SIMD-accelerated operations on value arrays
 ///
-/// These functions check for SIMD support at runtime and fall back
-/// to scalar implementations if unavailable.
+/// Provides vectorized operations for common aggregation functions.
+/// Uses manual loop unrolling and compiler auto-vectorization hints
+/// to achieve SIMD performance on stable Rust.
+///
+/// Note: std::simd (portable_simd) is nightly-only. These implementations
+/// are designed to be auto-vectorized by LLVM when compiled with:
+/// - `-C target-cpu=native` or specific target features
+/// - Release mode optimizations
 pub mod simd {
-    /// Sum all values in the array using SIMD when available
+    /// SIMD lane width for f64 operations (4 lanes = 256-bit AVX)
+    const LANE_WIDTH: usize = 4;
+
+    /// Sum all values in the array using vectorized operations
+    ///
+    /// Uses loop unrolling and Kahan summation for both performance
+    /// and numerical accuracy. The compiler can auto-vectorize the
+    /// inner loop when target features are enabled.
     #[inline]
     pub fn sum_f64(values: &[f64]) -> f64 {
-        // Check if we have enough values to benefit from SIMD
-        if values.len() < 8 {
+        if values.is_empty() {
+            return 0.0;
+        }
+
+        // For small arrays, use simple iteration
+        if values.len() < LANE_WIDTH * 2 {
             return values.iter().sum();
         }
 
-        // Use Kahan summation for better numerical accuracy
-        let mut sum = 0.0;
-        let mut compensation = 0.0;
+        // Use multiple accumulators for instruction-level parallelism
+        // This helps the compiler auto-vectorize and hide latency
+        let mut sums = [0.0f64; LANE_WIDTH];
+        let mut compensations = [0.0f64; LANE_WIDTH];
 
-        for &val in values {
-            let y = val - compensation;
-            let t = sum + y;
-            compensation = (t - sum) - y;
-            sum = t;
+        // Process LANE_WIDTH elements at a time with Kahan summation
+        let chunks = values.chunks_exact(LANE_WIDTH);
+        let remainder = chunks.remainder();
+
+        for chunk in chunks {
+            for (i, &val) in chunk.iter().enumerate() {
+                // Kahan summation for each lane
+                let y = val - compensations[i];
+                let t = sums[i] + y;
+                compensations[i] = (t - sums[i]) - y;
+                sums[i] = t;
+            }
         }
 
-        sum
+        // Sum the lane accumulators
+        let mut total = 0.0;
+        let mut comp = 0.0;
+        for &s in &sums {
+            let y = s - comp;
+            let t = total + y;
+            comp = (t - total) - y;
+            total = t;
+        }
+
+        // Add remainder elements
+        for &val in remainder {
+            let y = val - comp;
+            let t = total + y;
+            comp = (t - total) - y;
+            total = t;
+        }
+
+        total
     }
 
-    /// Find minimum value using SIMD when available
+    /// Find minimum value using vectorized comparison
+    ///
+    /// Uses multiple accumulators for parallel comparison,
+    /// enabling auto-vectorization.
     #[inline]
     pub fn min_f64(values: &[f64]) -> Option<f64> {
         if values.is_empty() {
             return None;
         }
 
-        let mut min = values[0];
-        for &val in &values[1..] {
-            if val < min {
-                min = val;
+        if values.len() < LANE_WIDTH * 2 {
+            // Scalar path for small arrays
+            return values.iter().copied().reduce(f64::min);
+        }
+
+        // Initialize lane minimums with first LANE_WIDTH values
+        let mut mins = [f64::INFINITY; LANE_WIDTH];
+        for (i, &v) in values.iter().take(LANE_WIDTH).enumerate() {
+            mins[i] = v;
+        }
+
+        // Process remaining values in LANE_WIDTH chunks
+        let chunks = values[LANE_WIDTH..].chunks_exact(LANE_WIDTH);
+        let remainder = chunks.remainder();
+
+        for chunk in chunks {
+            for (i, &val) in chunk.iter().enumerate() {
+                if val < mins[i] {
+                    mins[i] = val;
+                }
             }
         }
-        Some(min)
+
+        // Find minimum across lanes
+        let mut result = mins[0];
+        for &m in &mins[1..] {
+            if m < result {
+                result = m;
+            }
+        }
+
+        // Check remainder
+        for &val in remainder {
+            if val < result {
+                result = val;
+            }
+        }
+
+        Some(result)
     }
 
-    /// Find maximum value using SIMD when available
+    /// Find maximum value using vectorized comparison
+    ///
+    /// Uses multiple accumulators for parallel comparison,
+    /// enabling auto-vectorization.
     #[inline]
     pub fn max_f64(values: &[f64]) -> Option<f64> {
         if values.is_empty() {
             return None;
         }
 
-        let mut max = values[0];
-        for &val in &values[1..] {
-            if val > max {
-                max = val;
+        if values.len() < LANE_WIDTH * 2 {
+            // Scalar path for small arrays
+            return values.iter().copied().reduce(f64::max);
+        }
+
+        // Initialize lane maximums with first LANE_WIDTH values
+        let mut maxs = [f64::NEG_INFINITY; LANE_WIDTH];
+        for (i, &v) in values.iter().take(LANE_WIDTH).enumerate() {
+            maxs[i] = v;
+        }
+
+        // Process remaining values in LANE_WIDTH chunks
+        let chunks = values[LANE_WIDTH..].chunks_exact(LANE_WIDTH);
+        let remainder = chunks.remainder();
+
+        for chunk in chunks {
+            for (i, &val) in chunk.iter().enumerate() {
+                if val > maxs[i] {
+                    maxs[i] = val;
+                }
             }
         }
-        Some(max)
+
+        // Find maximum across lanes
+        let mut result = maxs[0];
+        for &m in &maxs[1..] {
+            if m > result {
+                result = m;
+            }
+        }
+
+        // Check remainder
+        for &val in remainder {
+            if val > result {
+                result = val;
+            }
+        }
+
+        Some(result)
     }
 
-    /// Count values matching a predicate using SIMD when available
+    /// Count values matching a predicate using vectorized operations
     #[inline]
     pub fn count_where<F>(values: &[f64], predicate: F) -> usize
     where
         F: Fn(f64) -> bool,
     {
         values.iter().filter(|&&v| predicate(v)).count()
+    }
+
+    /// Count values greater than threshold (specialized for auto-vectorization)
+    #[inline]
+    pub fn count_gt(values: &[f64], threshold: f64) -> usize {
+        if values.len() < LANE_WIDTH * 2 {
+            return values.iter().filter(|&&v| v > threshold).count();
+        }
+
+        let mut counts = [0usize; LANE_WIDTH];
+        let chunks = values.chunks_exact(LANE_WIDTH);
+        let remainder = chunks.remainder();
+
+        for chunk in chunks {
+            for (i, &val) in chunk.iter().enumerate() {
+                counts[i] += (val > threshold) as usize;
+            }
+        }
+
+        let mut total: usize = counts.iter().sum();
+        total += remainder.iter().filter(|&&v| v > threshold).count();
+        total
+    }
+
+    /// Count values less than threshold (specialized for auto-vectorization)
+    #[inline]
+    pub fn count_lt(values: &[f64], threshold: f64) -> usize {
+        if values.len() < LANE_WIDTH * 2 {
+            return values.iter().filter(|&&v| v < threshold).count();
+        }
+
+        let mut counts = [0usize; LANE_WIDTH];
+        let chunks = values.chunks_exact(LANE_WIDTH);
+        let remainder = chunks.remainder();
+
+        for chunk in chunks {
+            for (i, &val) in chunk.iter().enumerate() {
+                counts[i] += (val < threshold) as usize;
+            }
+        }
+
+        let mut total: usize = counts.iter().sum();
+        total += remainder.iter().filter(|&&v| v < threshold).count();
+        total
     }
 
     /// Apply filter and return matching indices
@@ -298,6 +455,105 @@ pub mod simd {
             .filter(|(_, &v)| predicate(v))
             .map(|(i, _)| i)
             .collect()
+    }
+
+    /// Generate a boolean mask for values matching a predicate
+    ///
+    /// Returns a Vec<bool> where true indicates the value matches.
+    /// Useful for filter operations.
+    #[inline]
+    pub fn generate_mask<F>(values: &[f64], predicate: F) -> Vec<bool>
+    where
+        F: Fn(f64) -> bool,
+    {
+        values.iter().map(|&v| predicate(v)).collect()
+    }
+
+    /// Apply mask to select values (scatter operation)
+    ///
+    /// Returns values where mask[i] is true.
+    #[inline]
+    pub fn apply_mask(values: &[f64], mask: &[bool]) -> Vec<f64> {
+        values
+            .iter()
+            .zip(mask.iter())
+            .filter(|(_, &m)| m)
+            .map(|(&v, _)| v)
+            .collect()
+    }
+
+    /// Compute element-wise sum of two slices
+    #[inline]
+    pub fn add_arrays(a: &[f64], b: &[f64]) -> Vec<f64> {
+        debug_assert_eq!(a.len(), b.len());
+        a.iter().zip(b.iter()).map(|(&x, &y)| x + y).collect()
+    }
+
+    /// Compute element-wise product of two slices
+    #[inline]
+    pub fn mul_arrays(a: &[f64], b: &[f64]) -> Vec<f64> {
+        debug_assert_eq!(a.len(), b.len());
+        a.iter().zip(b.iter()).map(|(&x, &y)| x * y).collect()
+    }
+
+    /// Scale all values by a constant
+    #[inline]
+    pub fn scale(values: &[f64], factor: f64) -> Vec<f64> {
+        values.iter().map(|&v| v * factor).collect()
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn test_sum_empty() {
+            assert_eq!(sum_f64(&[]), 0.0);
+        }
+
+        #[test]
+        fn test_sum_small() {
+            let values = vec![1.0, 2.0, 3.0];
+            assert!((sum_f64(&values) - 6.0).abs() < 1e-10);
+        }
+
+        #[test]
+        fn test_sum_large() {
+            let values: Vec<f64> = (0..1000).map(|i| i as f64).collect();
+            let expected = (0..1000).sum::<i32>() as f64;
+            assert!((sum_f64(&values) - expected).abs() < 1e-10);
+        }
+
+        #[test]
+        fn test_min_max() {
+            let values = vec![3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0];
+            assert_eq!(min_f64(&values), Some(1.0));
+            assert_eq!(max_f64(&values), Some(9.0));
+        }
+
+        #[test]
+        fn test_min_max_empty() {
+            let empty: Vec<f64> = vec![];
+            assert_eq!(min_f64(&empty), None);
+            assert_eq!(max_f64(&empty), None);
+        }
+
+        #[test]
+        fn test_count_gt() {
+            let values = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+            assert_eq!(count_gt(&values, 5.0), 5);
+            assert_eq!(count_lt(&values, 5.0), 4);
+        }
+
+        #[test]
+        fn test_mask_operations() {
+            let values = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+            let mask = generate_mask(&values, |v| v > 2.0);
+            assert_eq!(mask, vec![false, false, true, true, true]);
+
+            let filtered = apply_mask(&values, &mask);
+            assert_eq!(filtered, vec![3.0, 4.0, 5.0]);
+        }
     }
 }
 
