@@ -652,96 +652,98 @@ impl StorageEngine for LocalDiskEngine {
         let stats = Arc::clone(&self.stats);
 
         // Create an async stream that reads chunks
-        Box::pin(futures::stream::iter(chunk_locations).then(move |location| {
-            // Clone once per iteration instead of in nested closure
-            let engine_id = engine_id.clone();
-            let stats = Arc::clone(&stats);
+        Box::pin(
+            futures::stream::iter(chunk_locations).then(move |location| {
+                // Clone once per iteration instead of in nested closure
+                let engine_id = engine_id.clone();
+                let stats = Arc::clone(&stats);
 
-            async move {
-                use crate::storage::chunk::ChunkHeader;
-                use tokio::io::AsyncReadExt;
+                async move {
+                    use crate::storage::chunk::ChunkHeader;
+                    use tokio::io::AsyncReadExt;
 
-                // Verify engine ID matches
-                if location.engine_id != engine_id {
-                    return Err(StorageError::ChunkNotFound(format!(
-                        "Engine ID mismatch: expected {}, got {}",
-                        engine_id, location.engine_id
-                    )));
-                }
-
-                // Fix SEC-003: Remove TOCTOU race by just attempting to open
-                // If file doesn't exist, we get a clear error from open()
-                let path = PathBuf::from(&location.path);
-                let mut file = match fs::File::open(&path).await {
-                    Ok(f) => f,
-                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    // Verify engine ID matches
+                    if location.engine_id != engine_id {
                         return Err(StorageError::ChunkNotFound(format!(
-                            "Chunk file not found: {}",
-                            location.path
+                            "Engine ID mismatch: expected {}, got {}",
+                            engine_id, location.engine_id
                         )));
                     }
-                    Err(e) => return Err(StorageError::Io(e)),
-                };
 
-                // Read and parse header (first 64 bytes)
-                let mut header_bytes = [0u8; 64];
-                file.read_exact(&mut header_bytes).await?;
+                    // Fix SEC-003: Remove TOCTOU race by just attempting to open
+                    // If file doesn't exist, we get a clear error from open()
+                    let path = PathBuf::from(&location.path);
+                    let mut file = match fs::File::open(&path).await {
+                        Ok(f) => f,
+                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                            return Err(StorageError::ChunkNotFound(format!(
+                                "Chunk file not found: {}",
+                                location.path
+                            )));
+                        }
+                        Err(e) => return Err(StorageError::Io(e)),
+                    };
 
-                let header = ChunkHeader::from_bytes(&header_bytes).map_err(|e| {
-                    StorageError::ChunkNotFound(format!("Failed to parse chunk header: {}", e))
-                })?;
+                    // Read and parse header (first 64 bytes)
+                    let mut header_bytes = [0u8; 64];
+                    file.read_exact(&mut header_bytes).await?;
 
-                // Validate header
-                header.validate().map_err(|e| {
-                    StorageError::ChunkNotFound(format!("Invalid chunk header: {}", e))
-                })?;
+                    let header = ChunkHeader::from_bytes(&header_bytes).map_err(|e| {
+                        StorageError::ChunkNotFound(format!("Failed to parse chunk header: {}", e))
+                    })?;
 
-                // Fix VAL-001: Validate compressed_size before allocation
-                if header.compressed_size > MAX_CHUNK_SIZE {
-                    return Err(StorageError::CorruptedData(format!(
-                        "Chunk size {} exceeds maximum allowed size {}",
-                        header.compressed_size, MAX_CHUNK_SIZE
-                    )));
+                    // Validate header
+                    header.validate().map_err(|e| {
+                        StorageError::ChunkNotFound(format!("Invalid chunk header: {}", e))
+                    })?;
+
+                    // Fix VAL-001: Validate compressed_size before allocation
+                    if header.compressed_size > MAX_CHUNK_SIZE {
+                        return Err(StorageError::CorruptedData(format!(
+                            "Chunk size {} exceeds maximum allowed size {}",
+                            header.compressed_size, MAX_CHUNK_SIZE
+                        )));
+                    }
+
+                    // Read compressed data
+                    let mut compressed_data = vec![0u8; header.compressed_size as usize];
+                    file.read_exact(&mut compressed_data).await?;
+
+                    // Verify checksum
+                    if header.checksum
+                        != crate::compression::gorilla::GorillaCompressor::calculate_checksum(
+                            &compressed_data,
+                        )
+                    {
+                        return Err(StorageError::CorruptedData(
+                            "Chunk checksum verification failed".to_string(),
+                        ));
+                    }
+
+                    // Fix PERF-001: Use read lock only for stats update
+                    // Skip last_accessed updates in hot path - maintenance handles it
+                    {
+                        let mut s = stats.write();
+                        s.read_ops += 1;
+                    }
+
+                    // Return the CompressedBlock
+                    Ok(crate::engine::traits::CompressedBlock {
+                        algorithm_id: "gorilla".to_string(),
+                        original_size: header.uncompressed_size as usize,
+                        compressed_size: header.compressed_size as usize,
+                        checksum: header.checksum,
+                        data: bytes::Bytes::from(compressed_data),
+                        metadata: crate::engine::traits::BlockMetadata {
+                            start_timestamp: header.start_timestamp,
+                            end_timestamp: header.end_timestamp,
+                            point_count: header.point_count as usize,
+                            series_id: header.series_id,
+                        },
+                    })
                 }
-
-                // Read compressed data
-                let mut compressed_data = vec![0u8; header.compressed_size as usize];
-                file.read_exact(&mut compressed_data).await?;
-
-                // Verify checksum
-                if header.checksum
-                    != crate::compression::gorilla::GorillaCompressor::calculate_checksum(
-                        &compressed_data,
-                    )
-                {
-                    return Err(StorageError::CorruptedData(
-                        "Chunk checksum verification failed".to_string(),
-                    ));
-                }
-
-                // Fix PERF-001: Use read lock only for stats update
-                // Skip last_accessed updates in hot path - maintenance handles it
-                {
-                    let mut s = stats.write();
-                    s.read_ops += 1;
-                }
-
-                // Return the CompressedBlock
-                Ok(crate::engine::traits::CompressedBlock {
-                    algorithm_id: "gorilla".to_string(),
-                    original_size: header.uncompressed_size as usize,
-                    compressed_size: header.compressed_size as usize,
-                    checksum: header.checksum,
-                    data: bytes::Bytes::from(compressed_data),
-                    metadata: crate::engine::traits::BlockMetadata {
-                        start_timestamp: header.start_timestamp,
-                        end_timestamp: header.end_timestamp,
-                        point_count: header.point_count as usize,
-                        series_id: header.series_id,
-                    },
-                })
-            }
-        }))
+            }),
+        )
     }
 
     fn stats(&self) -> crate::engine::traits::StorageStats {
@@ -802,7 +804,7 @@ impl StorageEngine for LocalDiskEngine {
 
         // Define retention period (30 days by default, could be made configurable)
         let retention_ms: i64 = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
-        // Fix EDGE-010: Use saturating_sub to prevent underflow
+                                                          // Fix EDGE-010: Use saturating_sub to prevent underflow
         let retention_cutoff = now.saturating_sub(retention_ms);
 
         // Collect chunks to delete (older than retention period)
@@ -963,7 +965,9 @@ mod tests {
         // Test different compression types
         let path_gor = engine.chunk_path(1, &chunk_id, CompressionType::Gorilla);
         assert!(path_gor.to_string_lossy().contains("series_1"));
-        assert!(path_gor.to_string_lossy().contains("chunk_550e8400-e29b-41d4-a716-446655440000"));
+        assert!(path_gor
+            .to_string_lossy()
+            .contains("chunk_550e8400-e29b-41d4-a716-446655440000"));
         assert!(path_gor.to_string_lossy().ends_with(".gor"));
 
         let path_snappy = engine.chunk_path(1, &chunk_id, CompressionType::Snappy);
@@ -1410,10 +1414,7 @@ mod tests {
                 },
             };
 
-            engine
-                .write_chunk(1, ChunkId::new(), &block)
-                .await
-                .unwrap();
+            engine.write_chunk(1, ChunkId::new(), &block).await.unwrap();
         }
 
         // Stream all chunks

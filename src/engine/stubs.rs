@@ -54,8 +54,8 @@
 //! ```
 
 use crate::engine::traits::{
-    ChunkLocation, ChunkMetadata, ChunkReference, ChunkStatus, CompressedBlock, Compressor,
-    CompressionStats, IndexConfig, IndexStats, MaintenanceReport, SeriesMetadata, StorageConfig,
+    ChunkLocation, ChunkMetadata, ChunkReference, ChunkStatus, CompressedBlock, CompressionStats,
+    Compressor, IndexConfig, IndexStats, MaintenanceReport, SeriesMetadata, StorageConfig,
     StorageEngine, StorageStats, TimeIndex,
 };
 use crate::error::{CompressionError, IndexError, StorageError};
@@ -155,8 +155,14 @@ impl fmt::Debug for S3Config {
             .field("bucket", &self.bucket)
             .field("region", &self.region)
             .field("endpoint", &self.endpoint)
-            .field("access_key_id", &self.access_key_id.as_ref().map(|_| "[REDACTED]"))
-            .field("secret_access_key", &self.secret_access_key.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "access_key_id",
+                &self.access_key_id.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field(
+                "secret_access_key",
+                &self.secret_access_key.as_ref().map(|_| "[REDACTED]"),
+            )
             .field("prefix", &self.prefix)
             .field("encryption_enabled", &self.encryption_enabled)
             .field("storage_class", &self.storage_class)
@@ -402,7 +408,9 @@ impl StorageEngine for S3Engine {
 
         self.stats.total_chunks.fetch_sub(1, Ordering::Relaxed);
         if let Some(size) = location.size {
-            self.stats.total_bytes.fetch_sub(size as u64, Ordering::Relaxed);
+            self.stats
+                .total_bytes
+                .fetch_sub(size as u64, Ordering::Relaxed);
         }
 
         Ok(())
@@ -607,9 +615,9 @@ impl Compressor for ParquetCompressor {
             stats.total_compressed += 1;
             stats.compression_time_ms += start_time.elapsed().as_millis() as u64;
             let ratio = original_size as f64 / compressed_size as f64;
-            stats.average_ratio =
-                (stats.average_ratio * (stats.total_compressed - 1) as f64 + ratio)
-                    / stats.total_compressed as f64;
+            stats.average_ratio = (stats.average_ratio * (stats.total_compressed - 1) as f64
+                + ratio)
+                / stats.total_compressed as f64;
         }
 
         Ok(CompressedBlock {
@@ -656,12 +664,8 @@ impl Compressor for ParquetCompressor {
             ));
         }
 
-        let count = u32::from_le_bytes([
-            block.data[0],
-            block.data[1],
-            block.data[2],
-            block.data[3],
-        ]) as usize;
+        let count = u32::from_le_bytes([block.data[0], block.data[1], block.data[2], block.data[3]])
+            as usize;
 
         let expected_size = 4 + count * 32; // 16 bytes for u128 + 8 for i64 + 8 for f64
         if block.data.len() < expected_size {
@@ -985,7 +989,10 @@ mod tests {
         // Use a valid UUID for testing
         let chunk_id = ChunkId::from_string("550e8400-e29b-41d4-a716-446655440000").unwrap();
         let key = engine.object_key(123, &chunk_id);
-        assert_eq!(key, "chunks/series_123/chunk_550e8400-e29b-41d4-a716-446655440000.gor");
+        assert_eq!(
+            key,
+            "chunks/series_123/chunk_550e8400-e29b-41d4-a716-446655440000.gor"
+        );
     }
 
     #[test]
@@ -1058,13 +1065,27 @@ mod tests {
         // Use valid UUID for chunk ID
         let chunk_id = ChunkId::from_string("550e8400-e29b-41d4-a716-446655440001").unwrap();
         index
-            .add_chunk(1, chunk_id, TimeRange { start: 0, end: 1000 }, location)
+            .add_chunk(
+                1,
+                chunk_id,
+                TimeRange {
+                    start: 0,
+                    end: 1000,
+                },
+                location,
+            )
             .await
             .unwrap();
 
         // Query chunks
         let chunks = index
-            .query_chunks(1, TimeRange { start: 0, end: 2000 })
+            .query_chunks(
+                1,
+                TimeRange {
+                    start: 0,
+                    end: 2000,
+                },
+            )
             .await
             .unwrap();
         assert_eq!(chunks.len(), 1);
