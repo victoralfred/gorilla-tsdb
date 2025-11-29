@@ -1,20 +1,20 @@
 # Release Automation Workflow
-# Triggered on version tags (v*.*.*)
+# Triggered on version tags (v*.*.*) or manually via workflow_dispatch.
 
 name: Release
 
 on:
   push:
     tags:
-      - "v*.*.*"
+      - "v[0-9]+.[0-9]+.[0-9]+(-[a-zA-Z0-9]+)?" # Enforce semantic versioning format
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to release (e.g., v1.0.0)"
+        description: "Version to release (e.g., v1.0.0 or v1.0.0-rc1)"
         required: true
         type: string
       prerelease:
-        description: "Mark as prerelease"
+        description: "Mark as prerelease (overrides tag check)"
         required: false
         default: false
         type: boolean
@@ -24,10 +24,10 @@ env:
 
 jobs:
   # ============================================================
-  # Validate Release
+  # Job 1: Validate and Determine Release Version
   # ============================================================
   validate:
-    name: Validate Release
+    name: Validate Version
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -38,7 +38,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Determine version
+      - name: Determine version and prerelease status
         id: version
         run: |
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
@@ -46,27 +46,26 @@ jobs:
             IS_PRERELEASE="${{ inputs.prerelease }}"
           else
             VERSION="${{ github.ref_name }}"
+            # Auto-detect prerelease from tag suffix
             if [[ "$VERSION" == *"-rc"* ]] || [[ "$VERSION" == *"-beta"* ]] || [[ "$VERSION" == *"-alpha"* ]]; then
               IS_PRERELEASE="true"
             else
               IS_PRERELEASE="false"
             fi
           fi
+          
+          # Validate semantic version format (e.g., v1.2.3 or v1.2.3-rc1)
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
+            echo "::error file=.github/workflows/release.yml::Invalid version format: $VERSION. Expected vX.Y.Z or vX.Y.Z-suffix."
+            exit 1
+          fi
+
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
           echo "Release version: $VERSION (prerelease: $IS_PRERELEASE)"
 
-      - name: Validate version format
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
-            echo "Invalid version format: $VERSION"
-            echo "Expected format: vX.Y.Z or vX.Y.Z-suffix"
-            exit 1
-          fi
-
   # ============================================================
-  # Build Release Artifacts
+  # Job 2: Build Multi-Target Release Artifacts (Binaries)
   # ============================================================
   build:
     name: Build (${{ matrix.target }})
@@ -76,29 +75,28 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Standard Linux (glibc)
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            artifact_name: gorilla-tsdb
             asset_name: gorilla-tsdb-linux-amd64
+          # Static Linux (musl) for maximum portability
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
-            artifact_name: gorilla-tsdb
             asset_name: gorilla-tsdb-linux-musl-amd64
-          # Uncomment for macOS support
-          # - target: x86_64-apple-darwin
-          #   os: macos-latest
-          #   artifact_name: gorilla-tsdb
-          #   asset_name: gorilla-tsdb-darwin-amd64
-          # - target: aarch64-apple-darwin
-          #   os: macos-latest
-          #   artifact_name: gorilla-tsdb
-          #   asset_name: gorilla-tsdb-darwin-arm64
+          # macOS (Intel)
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            asset_name: gorilla-tsdb-darwin-amd64
+          # macOS (Apple Silicon)
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            asset_name: gorilla-tsdb-darwin-arm64
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
+      - name: Install Rust toolchain and target
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -112,29 +110,35 @@ jobs:
         with:
           path: |
             ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
+            ~/.cargo/registry/
+            ~/.cargo/git/
             target/
           key: ${{ runner.os }}-${{ matrix.target }}-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-release-
 
       - name: Build release binary
         run: cargo build --release --locked --target ${{ matrix.target }}
 
       - name: Create release archive
         run: |
-          mkdir -p release
-          # Try to find the binary (could be named gorilla-tsdb or server)
-          BINARY=$(find target/${{ matrix.target }}/release -maxdepth 1 -type f -executable -name 'gorilla-tsdb' -o -name 'server' 2>/dev/null | head -1)
-          if [ -n "$BINARY" ]; then
-            cp "$BINARY" release/gorilla-tsdb
-          else
-            echo "Warning: No binary found, creating placeholder"
-            touch release/.placeholder
+          VERSION="${{ needs.validate.outputs.version }}"
+          ASSET_FILE="${{ matrix.asset_name }}-${VERSION}.tar.gz"
+
+          # Use 'find' to locate the built executable, ignoring temporary files
+          BINARY=$(find target/${{ matrix.target }}/release -maxdepth 1 -type f -executable ! -name 'build-*' | head -1)
+
+          if [ -z "$BINARY" ]; then
+            echo "::error::Could not find built release binary for target ${{ matrix.target }}."
+            exit 1
           fi
-          cp README.md release/ 2>/dev/null || true
-          cp LICENSE* release/ 2>/dev/null || true
-          tar -czvf ${{ matrix.asset_name }}-${{ needs.validate.outputs.version }}.tar.gz -C release .
+
+          mkdir -p release
+          # Ensure binary is copied with the intended final name
+          cp "$BINARY" release/gorilla-tsdb 
+          cp README.md LICENSE* release/ 2>/dev/null || true
+          
+          tar -czvf $ASSET_FILE -C release .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -144,20 +148,20 @@ jobs:
           retention-days: 7
 
   # ============================================================
-  # Build Docker Images
+  # Job 3: Build and Push Docker Images
   # ============================================================
   docker:
-    name: Build Docker Images
+    name: Build & Push Docker Image
     needs: [validate]
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
+      packages: write # Required for pushing to GHCR
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up QEMU
+      - name: Set up QEMU (for multi-arch builds)
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
@@ -168,17 +172,21 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUBX_TOKEN }}
+          # Use GITHUB_TOKEN for pushing to GHCR
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract metadata for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
+          # Pass the version once to derive major/minor/patch tags
+          version: ${{ needs.validate.outputs.version }}
           tags: |
-            type=semver,pattern={{version}},value=${{ needs.validate.outputs.version }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ needs.validate.outputs.version }}
-            type=semver,pattern={{major}},value=${{ needs.validate.outputs.version }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            # Tag 'latest' only for stable (non-prerelease) versions
             type=raw,value=latest,enable=${{ needs.validate.outputs.is_prerelease == 'false' }}
 
       - name: Build and push Docker image
@@ -190,53 +198,55 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # Build only for AMD64 (add ARM64 if Dockerfile supports it)
           platforms: linux/amd64
 
   # ============================================================
-  # Create GitHub Release
+  # Job 4: Create GitHub Release
   # ============================================================
   release:
     name: Create GitHub Release
     needs: [validate, build, docker]
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write # Required for creating the release and uploading assets
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Download all artifacts
+      - name: Download all built artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: Generate changelog
+      - name: Generate release notes and checksums
         id: changelog
         run: |
           VERSION="${{ needs.validate.outputs.version }}"
           # Get previous tag
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
 
-          cat > RELEASE_NOTES.md << 'HEADER'
+          # --- RELEASE_NOTES.md Header ---
+          cat > RELEASE_NOTES.md << HEADER
           ## Gorilla TSDB $VERSION
 
-          High-performance time-series database with Gorilla compression.
+          High-performance time-series database.
 
           ### Installation
 
           **Docker:**
-          ```bash
+          \`\`\`bash
           docker pull ghcr.io/${{ github.repository }}:$VERSION
-          ```
+          \`\`\`
 
           **Binary:**
           Download the appropriate archive for your platform from the assets below.
 
           HEADER
-          sed -i "s/\$VERSION/$VERSION/g" RELEASE_NOTES.md
-
+          
+          # --- Changelog Section ---
           if [ -n "$PREV_TAG" ]; then
             echo "### Changes since $PREV_TAG" >> RELEASE_NOTES.md
             echo "" >> RELEASE_NOTES.md
@@ -245,9 +255,11 @@ jobs:
             echo "### Initial Release" >> RELEASE_NOTES.md
           fi
 
+          # --- Checksums Section ---
           echo "" >> RELEASE_NOTES.md
           echo "### Checksums" >> RELEASE_NOTES.md
-          echo '```' >> RELEASE_NOTES.md
+          echo '```sh' >> RELEASE_NOTES.md
+          # Recursively find all artifacts and generate SHA256 sums
           find artifacts -name "*.tar.gz" -exec sha256sum {} \; >> RELEASE_NOTES.md
           echo '```' >> RELEASE_NOTES.md
 
@@ -256,28 +268,31 @@ jobs:
         with:
           name: Gorilla TSDB ${{ needs.validate.outputs.version }}
           body_path: RELEASE_NOTES.md
+          # Uploads all .tar.gz files downloaded in the artifacts directory
           files: artifacts/**/*.tar.gz
           draft: false
           prerelease: ${{ needs.validate.outputs.is_prerelease == 'true' }}
           generate_release_notes: false
         env:
-          GITHUBX_TOKEN: ${{ secrets.GITHUBX_TOKEN }}
+          # Use default GITHUB_TOKEN for creating the release
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ============================================================
-  # Post-Release Notifications
+  # Job 5: Post-Release Notifications
   # ============================================================
   notify:
-    name: Post-Release Tasks
+    name: Post-Release Summary
     needs: [validate, release]
     runs-on: ubuntu-latest
+    # Only run the final summary for stable, official releases
     if: ${{ needs.validate.outputs.is_prerelease == 'false' }}
     steps:
-      - name: Release summary
+      - name: Output Release Summary
         run: |
-          echo "## Release Complete" >> $GITHUB_STEP_SUMMARY
+          echo "## ✅ Release Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** ${{ needs.validate.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Docker Image:** \`ghcr.io/${{ github.repository }}:${{ needs.validate.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Release has been published successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "Successfully published new stable release binaries and Docker images!" >> $GITHUB_STEP_SUMMARY
