@@ -1,0 +1,22 @@
+# CODEOWNERS file for Gorilla TSDB
+# These owners will be requested for review when someone opens a pull request
+
+# Default owners for everything in the repo
+* @voseghale
+
+# Core compression and storage modules - require careful review
+/src/compression/ @voseghale
+/src/storage/ @voseghale
+
+# Security-sensitive code
+/src/security.rs @voseghale
+/src/ingestion/network/ @voseghale
+
+# CI/CD and infrastructure
+/.github/ @voseghale
+/Dockerfile @voseghale
+/docker-compose.yml @voseghale
+
+# Documentation
+/docs/ @voseghale
+*.md @voseghale
