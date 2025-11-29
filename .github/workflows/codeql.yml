@@ -1,27 +1,28 @@
-# .github/workflows/codeql-analysis.yml
+ # .github/workflows/codeql-analysis.yml
 
 # Provides Static Analysis Security Testing (SAST) using GitHub's CodeQL Engine.
 # Scans for vulnerabilities, security flaws, and common bugs.
-
 name: "CodeQL Analysis"
+# For most projects, this workflow file will not need changing; you simply need
+# to commit it to your repository.
+#
+# You may wish to alter this file to override the set of languages analyzed,
+# or to provide custom queries or build logic.
+#
+# ******** NOTE ********
+# We have attempted to detect the languages in your repository. Please check
+# the `language` matrix defined below to confirm you have the correct set of
+# supported CodeQL languages.
+#
 
 on:
   push:
-    # Trigger on the main development branch (main/develop)
-    branches: [ "main", "develop" ]
+    branches: [ "main" ]
   pull_request:
-    # Run against the PR branch when targeting main/develop
-    branches: [ "main", "develop" ]
-    # Optional: You can specify paths here to only run CodeQL when source code changes
-    # paths:
-    #   - 'src/**'
-    #   - 'Cargo.toml'
-    #   - 'Cargo.lock'
+    branches: [ "main" ]
   schedule:
-    # Run weekly scan outside of peak hours (e.g., 3:07 AM UTC on Wednesday)
-    - cron: '07 3 * * 3' 
-  # Optional: Allows manual triggering of the scan
-  workflow_dispatch:
+    - cron: '32 2 * * 3'
+
 
 jobs:
   analyze:
