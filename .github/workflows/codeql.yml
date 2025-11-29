@@ -66,6 +66,8 @@ jobs:
     # CodeQL needs the environment set up before initialization.
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@0b1efabc08b657293548b77fb76cc02d26091c7e
+      with:
+        toolchain: ${{ matrix.rust }}
       
     # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
