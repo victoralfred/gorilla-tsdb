@@ -207,8 +207,8 @@ impl Default for TagResolverConfig {
             enable_cache: true,
             cache_ttl_secs: 60,
             enable_regex: true,
-            max_regex_pattern_len: 256,  // SEC-002: Limit regex pattern size
-            max_cache_entries: 10_000,   // SEC-005: Limit cache size
+            max_regex_pattern_len: 256, // SEC-002: Limit regex pattern size
+            max_cache_entries: 10_000,  // SEC-005: Limit cache size
         }
     }
 }

@@ -24,6 +24,43 @@ use parking_lot::RwLock;
 
 use super::super::data_model::{TagKeyId, TagValueId};
 
+/// VAL-003: Maximum allowed length for tag keys
+pub const MAX_TAG_KEY_LENGTH: usize = 256;
+
+/// VAL-003: Maximum allowed length for tag values
+pub const MAX_TAG_VALUE_LENGTH: usize = 4096;
+
+/// VAL-003: Maximum allowed length for metric names
+pub const MAX_METRIC_NAME_LENGTH: usize = 512;
+
+/// Error when interning fails due to validation
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InternError {
+    /// String exceeds maximum allowed length
+    StringTooLong {
+        /// Actual length of the string
+        actual: usize,
+        /// Maximum allowed length
+        max: usize,
+    },
+}
+
+impl std::fmt::Display for InternError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InternError::StringTooLong { actual, max } => {
+                write!(
+                    f,
+                    "String too long: {} bytes (max: {} bytes)",
+                    actual, max
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for InternError {}
+
 // ============================================================================
 // String Interner
 // ============================================================================
@@ -138,7 +175,21 @@ impl StringInterner {
         self.string_to_id.read().contains_key(s)
     }
 
+    /// Try to intern a string with length validation
+    ///
+    /// VAL-003: Returns error if string exceeds max_length
+    pub fn try_intern(&self, s: &str, max_length: usize) -> Result<u32, InternError> {
+        if s.len() > max_length {
+            return Err(InternError::StringTooLong {
+                actual: s.len(),
+                max: max_length,
+            });
+        }
+        Ok(self.intern(s))
+    }
+
     /// Get the number of interned strings
+    #[must_use]
     pub fn len(&self) -> usize {
         self.string_to_id.read().len()
     }
@@ -350,6 +401,19 @@ impl TagDictionary {
         self.key_interner.intern(key)
     }
 
+    /// Try to intern a tag key with length validation
+    ///
+    /// VAL-003: Returns error if key exceeds MAX_TAG_KEY_LENGTH
+    pub fn try_intern_key(&self, key: &str) -> Result<TagKeyId, InternError> {
+        if key.len() > MAX_TAG_KEY_LENGTH {
+            return Err(InternError::StringTooLong {
+                actual: key.len(),
+                max: MAX_TAG_KEY_LENGTH,
+            });
+        }
+        Ok(self.intern_key(key))
+    }
+
     /// Intern a tag value for a specific key
     pub fn intern_value(&self, key_id: TagKeyId, value: &str) -> TagValueId {
         // Fast path: check if value interner exists
@@ -376,6 +440,19 @@ impl TagDictionary {
         value_id
     }
 
+    /// Try to intern a tag value with length validation
+    ///
+    /// VAL-003: Returns error if value exceeds MAX_TAG_VALUE_LENGTH
+    pub fn try_intern_value(&self, key_id: TagKeyId, value: &str) -> Result<TagValueId, InternError> {
+        if value.len() > MAX_TAG_VALUE_LENGTH {
+            return Err(InternError::StringTooLong {
+                actual: value.len(),
+                max: MAX_TAG_VALUE_LENGTH,
+            });
+        }
+        Ok(self.intern_value(key_id, value))
+    }
+
     /// Intern a complete tag (key + value)
     pub fn intern_tag(&self, key: &str, value: &str) -> (TagKeyId, TagValueId) {
         let key_id = self.intern_key(key);
@@ -383,9 +460,31 @@ impl TagDictionary {
         (key_id, value_id)
     }
 
+    /// Try to intern a complete tag with length validation
+    ///
+    /// VAL-003: Returns error if key or value exceeds limits
+    pub fn try_intern_tag(&self, key: &str, value: &str) -> Result<(TagKeyId, TagValueId), InternError> {
+        let key_id = self.try_intern_key(key)?;
+        let value_id = self.try_intern_value(key_id, value)?;
+        Ok((key_id, value_id))
+    }
+
     /// Intern a metric name
     pub fn intern_metric(&self, name: &str) -> TagValueId {
         self.metric_interner.intern(name)
+    }
+
+    /// Try to intern a metric name with length validation
+    ///
+    /// VAL-003: Returns error if name exceeds MAX_METRIC_NAME_LENGTH
+    pub fn try_intern_metric(&self, name: &str) -> Result<TagValueId, InternError> {
+        if name.len() > MAX_METRIC_NAME_LENGTH {
+            return Err(InternError::StringTooLong {
+                actual: name.len(),
+                max: MAX_METRIC_NAME_LENGTH,
+            });
+        }
+        Ok(self.intern_metric(name))
     }
 
     /// Resolve a tag key ID to string

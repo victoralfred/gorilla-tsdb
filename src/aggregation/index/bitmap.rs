@@ -333,7 +333,6 @@ impl BitmapIndex {
     /// Remove a series from the index
     pub fn remove_series(&self, series_id: SeriesId, tags: &[(TagKeyId, TagValueId)]) {
         let mut bitmaps = self.bitmaps.write();
-        let mut key_bitmaps = self.key_bitmaps.write();
 
         for (key_id, value_id) in tags {
             if let Some(bitmap) = bitmaps.get_mut(&(*key_id, *value_id)) {
@@ -507,36 +506,73 @@ pub enum TagFilter {
 
 impl TagFilter {
     /// Create an exact match filter
+    #[must_use]
     pub fn exact(key_id: TagKeyId, value_id: TagValueId) -> Self {
         TagFilter::Exact(key_id, value_id)
     }
 
     /// Create an AND filter
+    ///
+    /// API-003: Returns `TagFilter::All` if filters is empty (neutral element for AND)
+    #[must_use]
     pub fn and(filters: Vec<TagFilter>) -> Self {
-        if filters.len() == 1 {
-            filters.into_iter().next().unwrap()
-        } else {
-            TagFilter::And(filters)
+        match filters.len() {
+            0 => TagFilter::All, // Empty AND = match all (neutral element)
+            1 => filters.into_iter().next().unwrap(),
+            _ => TagFilter::And(filters),
         }
+    }
+
+    /// Create an AND filter, returning None if filters is empty
+    ///
+    /// API-003: Explicit handling of empty case
+    #[must_use]
+    pub fn try_and(filters: Vec<TagFilter>) -> Option<Self> {
+        if filters.is_empty() {
+            return None;
+        }
+        Some(Self::and(filters))
     }
 
     /// Create an OR filter
+    ///
+    /// API-003: Returns empty bitmap equivalent if filters is empty
+    #[must_use]
     pub fn or(filters: Vec<TagFilter>) -> Self {
-        if filters.len() == 1 {
-            filters.into_iter().next().unwrap()
-        } else {
-            TagFilter::Or(filters)
+        match filters.len() {
+            0 => TagFilter::Or(vec![]), // Empty OR = match none
+            1 => filters.into_iter().next().unwrap(),
+            _ => TagFilter::Or(filters),
         }
     }
 
+    /// Create an OR filter, returning None if filters is empty
+    ///
+    /// API-003: Explicit handling of empty case
+    #[must_use]
+    pub fn try_or(filters: Vec<TagFilter>) -> Option<Self> {
+        if filters.is_empty() {
+            return None;
+        }
+        Some(Self::or(filters))
+    }
+
     /// Create a NOT filter (negation)
+    #[must_use]
     pub fn negate(filter: TagFilter) -> Self {
         TagFilter::Not(Box::new(filter))
     }
 
     /// Create a "has key" filter
+    #[must_use]
     pub fn has_key(key_id: TagKeyId) -> Self {
         TagFilter::HasKey(key_id)
+    }
+
+    /// Check if this filter is empty (will match nothing)
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        matches!(self, TagFilter::Or(filters) if filters.is_empty())
     }
 }
 

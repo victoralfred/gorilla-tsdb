@@ -42,9 +42,41 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use parking_lot::RwLock;
+
+// ============================================================================
+// Cardinality Errors
+// ============================================================================
+
+/// Error when merging cardinality estimators
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CardinalityMergeError {
+    /// The two estimators have different k values and cannot be merged
+    MismatchedK {
+        /// k value of the first estimator
+        self_k: usize,
+        /// k value of the second estimator
+        other_k: usize,
+    },
+}
+
+impl std::fmt::Display for CardinalityMergeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CardinalityMergeError::MismatchedK { self_k, other_k } => {
+                write!(
+                    f,
+                    "Cannot merge estimators with different k values: {} vs {}",
+                    self_k, other_k
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for CardinalityMergeError {}
 
 // ============================================================================
 // Cardinality Configuration
@@ -337,17 +369,15 @@ impl RateLimiter {
             }
 
             // Try to acquire a token atomically
-            match self.tokens_scaled.fetch_update(
-                Ordering::AcqRel,
-                Ordering::Relaxed,
-                |tokens| {
+            match self
+                .tokens_scaled
+                .fetch_update(Ordering::AcqRel, Ordering::Relaxed, |tokens| {
                     if tokens >= Self::SCALE {
                         Some(tokens - Self::SCALE)
                     } else {
                         None
                     }
-                },
-            ) {
+                }) {
                 Ok(_) => return true,
                 Err(_) => return false,
             }
@@ -456,11 +486,11 @@ impl CardinalityController {
     /// ERR-001: Uses saturating subtraction to prevent underflow
     pub fn remove_series(&self) {
         // Use fetch_update to ensure we don't underflow
-        let _ = self.active_series.fetch_update(
-            Ordering::Relaxed,
-            Ordering::Relaxed,
-            |current| Some(current.saturating_sub(1)),
-        );
+        let _ = self
+            .active_series
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                Some(current.saturating_sub(1))
+            });
     }
 
     /// Observe a label value
@@ -723,7 +753,11 @@ impl CardinalityEstimator {
     /// Panics if k < MIN_K (1)
     pub fn new(k: usize) -> Self {
         // EDGE-002: Prevent k=0 which would cause division by zero
-        assert!(k >= Self::MIN_K, "k must be at least {} to prevent division by zero", Self::MIN_K);
+        assert!(
+            k >= Self::MIN_K,
+            "k must be at least {} to prevent division by zero",
+            Self::MIN_K
+        );
 
         Self {
             min_values: Vec::with_capacity(k + 1),
@@ -813,8 +847,20 @@ impl CardinalityEstimator {
     }
 
     /// Merge another estimator into this one
-    pub fn merge(&mut self, other: &CardinalityEstimator) {
-        assert_eq!(self.k, other.k, "Cannot merge estimators with different k");
+    ///
+    /// ERR-003: Returns Result instead of panicking on mismatched k values
+    ///
+    /// # Errors
+    ///
+    /// Returns `CardinalityMergeError::MismatchedK` if the two estimators have
+    /// different k values.
+    pub fn merge(&mut self, other: &CardinalityEstimator) -> Result<(), CardinalityMergeError> {
+        if self.k != other.k {
+            return Err(CardinalityMergeError::MismatchedK {
+                self_k: self.k,
+                other_k: other.k,
+            });
+        }
 
         // Merge all values and keep only k smallest
         for &hash in &other.min_values {
@@ -827,6 +873,7 @@ impl CardinalityEstimator {
         // Keep only k smallest
         self.min_values.truncate(self.k);
         self.count += other.count;
+        Ok(())
     }
 
     /// Clear the estimator

@@ -33,6 +33,10 @@ use std::collections::{BinaryHeap, HashMap};
 
 use crate::types::SeriesId;
 
+/// Maximum allowed window size for moving functions
+/// VAL-001: Prevents excessive memory allocation
+pub const MAX_WINDOW_SIZE: usize = 1_000_000;
+
 // ============================================================================
 // TopK / BottomK
 // ============================================================================
@@ -167,7 +171,10 @@ where
 ///
 /// # Arguments
 /// * `values` - Input values
-/// * `window_size` - Size of the sliding window
+/// * `window_size` - Size of the sliding window (max: MAX_WINDOW_SIZE)
+///
+/// # Complexity
+/// Time: O(n), Space: O(n)
 ///
 /// # Example
 ///
@@ -176,8 +183,10 @@ where
 /// let ma = moving_avg(&values, 3);
 /// // Returns: [1.0, 1.5, 2.0, 3.0, 4.0]
 /// ```
+#[must_use]
 pub fn moving_avg(values: &[f64], window_size: usize) -> Vec<f64> {
-    if values.is_empty() || window_size == 0 {
+    // VAL-001: Validate window size
+    if values.is_empty() || window_size == 0 || window_size > MAX_WINDOW_SIZE {
         return Vec::new();
     }
 
@@ -201,8 +210,13 @@ pub fn moving_avg(values: &[f64], window_size: usize) -> Vec<f64> {
 }
 
 /// Calculate a moving sum over a sliding window
+///
+/// # Complexity
+/// Time: O(n), Space: O(n)
+#[must_use]
 pub fn moving_sum(values: &[f64], window_size: usize) -> Vec<f64> {
-    if values.is_empty() || window_size == 0 {
+    // VAL-001: Validate window size
+    if values.is_empty() || window_size == 0 || window_size > MAX_WINDOW_SIZE {
         return Vec::new();
     }
 
@@ -224,8 +238,13 @@ pub fn moving_sum(values: &[f64], window_size: usize) -> Vec<f64> {
 /// Calculate moving minimum over a sliding window
 ///
 /// PERF-001: Uses monotonic deque for O(n) total complexity instead of O(n*w)
+///
+/// # Complexity
+/// Time: O(n), Space: O(n)
+#[must_use]
 pub fn moving_min(values: &[f64], window_size: usize) -> Vec<f64> {
-    if values.is_empty() || window_size == 0 {
+    // VAL-001: Validate window size
+    if values.is_empty() || window_size == 0 || window_size > MAX_WINDOW_SIZE {
         return Vec::new();
     }
 
@@ -266,8 +285,13 @@ pub fn moving_min(values: &[f64], window_size: usize) -> Vec<f64> {
 /// Calculate moving maximum over a sliding window
 ///
 /// PERF-001: Uses monotonic deque for O(n) total complexity instead of O(n*w)
+///
+/// # Complexity
+/// Time: O(n), Space: O(n)
+#[must_use]
 pub fn moving_max(values: &[f64], window_size: usize) -> Vec<f64> {
-    if values.is_empty() || window_size == 0 {
+    // VAL-001: Validate window size
+    if values.is_empty() || window_size == 0 || window_size > MAX_WINDOW_SIZE {
         return Vec::new();
     }
 
@@ -532,36 +556,60 @@ pub fn clamp_max(values: &[f64], max: f64) -> Vec<f64> {
 // ============================================================================
 
 /// Extract hour from a Unix timestamp in milliseconds (0-23)
-pub fn hour(timestamp_ms: i64) -> u32 {
+///
+/// EDGE-008: Returns None for negative (pre-epoch) timestamps
+#[must_use]
+pub fn hour(timestamp_ms: i64) -> Option<u32> {
+    if timestamp_ms < 0 {
+        return None;
+    }
     let secs = timestamp_ms / 1000;
-    ((secs % 86400) / 3600) as u32
+    Some(((secs % 86400) / 3600) as u32)
 }
 
 /// Extract minute from a Unix timestamp in milliseconds (0-59)
-pub fn minute(timestamp_ms: i64) -> u32 {
+///
+/// EDGE-008: Returns None for negative (pre-epoch) timestamps
+#[must_use]
+pub fn minute(timestamp_ms: i64) -> Option<u32> {
+    if timestamp_ms < 0 {
+        return None;
+    }
     let secs = timestamp_ms / 1000;
-    ((secs % 3600) / 60) as u32
+    Some(((secs % 3600) / 60) as u32)
 }
 
 /// Extract day of week from a Unix timestamp in milliseconds (0=Sunday, 6=Saturday)
-pub fn day_of_week(timestamp_ms: i64) -> u32 {
+///
+/// EDGE-008: Returns None for negative (pre-epoch) timestamps
+#[must_use]
+pub fn day_of_week(timestamp_ms: i64) -> Option<u32> {
+    if timestamp_ms < 0 {
+        return None;
+    }
     let days_since_epoch = timestamp_ms / 86_400_000;
     // January 1, 1970 was a Thursday (day 4)
-    ((days_since_epoch + 4) % 7).unsigned_abs() as u32
+    Some(((days_since_epoch + 4) % 7) as u32)
 }
 
 /// Extract day of month from a Unix timestamp in milliseconds (1-31)
 ///
 /// Note: This is an approximation that doesn't account for all calendar rules.
 /// For precise date handling, use a proper datetime library.
-pub fn day_of_month(timestamp_ms: i64) -> u32 {
+///
+/// EDGE-008: Returns None for negative (pre-epoch) timestamps
+#[must_use]
+pub fn day_of_month(timestamp_ms: i64) -> Option<u32> {
+    if timestamp_ms < 0 {
+        return None;
+    }
     // Simplified: just extract the day part
     let secs = timestamp_ms / 1000;
     let days_in_year = secs / 86400 % 365;
 
     // Very rough approximation (doesn't handle leap years, varying month lengths)
     let day = (days_in_year % 30) + 1;
-    day as u32
+    Some(day as u32)
 }
 
 // ============================================================================
@@ -815,7 +863,10 @@ mod tests {
     fn test_hour() {
         // 2024-01-01 12:30:00 UTC = 1704112200000 ms
         let ts = 1704112200000;
-        assert_eq!(hour(ts), 12);
+        assert_eq!(hour(ts), Some(12));
+
+        // EDGE-008: Negative timestamps return None
+        assert_eq!(hour(-1000), None);
     }
 
     #[test]
