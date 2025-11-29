@@ -290,7 +290,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Required for creating the release and uploading assets
+      contents: write # Required for creating the release and uploading asset
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
