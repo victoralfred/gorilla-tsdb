@@ -29,7 +29,7 @@ futures = "0.3"
 bytes = { version = "1.7", features = ["serde"] }
 byteorder = "1.5"
 dashmap = "6.0"
-lru = "0.12"
+lru = "0.16.2"
 
 # Storage
 memmap2 = "0.9"
@@ -74,6 +74,7 @@ rayon = "1.8"
 
 # Security
 governor = "0.10.2"
+regex = "1.10"
 
 # TLS
 tokio-rustls = "0.26"
@@ -81,10 +82,10 @@ rustls = "0.23"
 rustls-pemfile = "2"
 
 # Network utilities
-socket2 = { version = "0.5", features = ["all"] }
+socket2 = { version = "0.6.0", features = ["all"] }
 
 # HTTP server (for metrics/health endpoints)
-axum = "0.7"
+axum = "0.8.6"
 tower = "0.5"
 tower-http = { version = "0.6", features = ["trace"] }
 hyper = { version = "1.0", features = ["server", "http1", "http2"] }
@@ -92,10 +93,10 @@ hyper-util = { version = "0.1", features = ["tokio"] }
 
 # Protocol parsing
 smallvec = { version = "1.13", features = ["serde"] }
-prost = "0.13"
+prost = "0.14.1"
 
 # Compression
-lz4_flex = "0.11"
+lz4_flex = "0.12.0"
 
 # Checksums
 crc32fast = "1.4"

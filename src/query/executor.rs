@@ -38,7 +38,9 @@
 
 use crate::query::ast::Query;
 use crate::query::error::QueryError;
-use crate::query::result::QueryResult;
+use crate::query::operators::{DataBatch, Operator};
+use crate::query::result::{QueryResult, ResultRow};
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 // ============================================================================
@@ -208,8 +210,9 @@ impl QueryExecutor {
     pub fn execute(&mut self, query: Query) -> Result<QueryResult, QueryError> {
         let start = Instant::now();
 
-        // Check for timeout before starting
-        if self.config.timeout.as_secs() == 0 {
+        // Check for timeout before starting (EDGE-007)
+        // Use is_zero() to catch sub-second timeouts like Duration::from_nanos(1)
+        if self.config.timeout.is_zero() {
             return Err(QueryError::timeout("Query timeout is zero"));
         }
 
@@ -293,16 +296,37 @@ impl QueryExecutor {
     }
 
     /// Execute an EXPLAIN query - return query plan without executing
+    ///
+    /// Generates the query plan, formats it as human-readable output,
+    /// and returns it as the query result. Includes cost estimates.
     fn execute_explain(
         &mut self,
-        _query: &crate::query::ast::Query,
+        query: &crate::query::ast::Query,
     ) -> Result<QueryResult, QueryError> {
-        // TODO: Implement explain
-        // 1. Generate query plan
-        // 2. Format plan as human-readable output
-        // 3. Include cost estimates
+        use crate::query::planner::QueryPlanner;
 
-        Ok(QueryResult::empty())
+        // Generate query plan
+        let planner = QueryPlanner::new();
+        let plan = planner.plan(query)?;
+
+        // Format the plan as a string
+        let plan_text = format!(
+            "EXPLAIN\n\
+             ========\n\n\
+             Logical Plan:\n\
+             {}\n\n\
+             Cost Estimate:\n\
+             - Estimated rows: {}\n\
+             - Estimated bytes: {}\n\
+             - Chunks to scan: {}\n",
+            plan.logical_plan,
+            plan.estimated_cost.estimated_rows,
+            plan.estimated_cost.estimated_bytes,
+            plan.estimated_cost.chunks_to_scan
+        );
+
+        // Return the plan as a special explain result
+        Ok(QueryResult::explain(plan_text))
     }
 
     /// Get current execution statistics
@@ -318,6 +342,130 @@ impl QueryExecutor {
     /// Get executor configuration
     pub fn config(&self) -> &ExecutorConfig {
         &self.config
+    }
+
+    /// Execute an operator tree and collect results
+    ///
+    /// This is the core execution loop that pulls batches from operators
+    /// and collects them into a QueryResult. It handles:
+    /// - Memory tracking and limits
+    /// - Timeout checking
+    /// - Row limit enforcement
+    /// - Statistics collection
+    ///
+    /// # Arguments
+    ///
+    /// * `operator` - Root of the operator tree to execute
+    /// * `ctx` - Execution context with limits and state
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(QueryResult)` - Results with metadata
+    /// * `Err(QueryError)` - If execution fails or limits exceeded
+    pub fn execute_operator(
+        &mut self,
+        mut operator: Box<dyn Operator>,
+        ctx: &mut ExecutionContext,
+    ) -> Result<QueryResult, QueryError> {
+        let mut rows = Vec::new();
+        let mut rows_scanned = 0u64;
+        let mut was_truncated = false;
+
+        // Pull batches from operator tree until exhausted or limit reached
+        while let Some(batch) = operator.next_batch(ctx)? {
+            // Track statistics
+            rows_scanned += batch.len() as u64;
+            self.stats.rows_scanned += batch.len() as u64;
+
+            // Convert batch to result rows
+            for i in 0..batch.len() {
+                // Check row limit
+                if rows.len() >= self.config.max_result_rows {
+                    was_truncated = true;
+                    break;
+                }
+
+                rows.push(ResultRow {
+                    timestamp: batch.timestamps[i],
+                    value: batch.values[i],
+                    series_id: batch.series_ids.as_ref().map(|ids| ids[i]),
+                    tags: HashMap::new(),
+                });
+            }
+
+            // Check if we've hit the row limit
+            if rows.len() >= self.config.max_result_rows {
+                was_truncated = true;
+                break;
+            }
+
+            // Check for timeout
+            if ctx.is_timed_out() {
+                return Err(QueryError::timeout("Query execution timed out"));
+            }
+
+            // Check memory limit
+            if ctx.is_memory_exceeded() {
+                return Err(QueryError::resource_limit("Memory limit exceeded"));
+            }
+        }
+
+        // Update statistics
+        self.stats.rows_returned += rows.len() as u64;
+
+        // Build result with metadata
+        let mut result = QueryResult::new(rows).with_rows_scanned(rows_scanned);
+
+        if was_truncated {
+            result.metadata.truncated = true;
+            result.metadata.add_warning(format!(
+                "Results truncated to {} rows",
+                self.config.max_result_rows
+            ));
+        }
+
+        Ok(result)
+    }
+
+    /// Execute a batch operation with a custom processor function
+    ///
+    /// This is useful for cases where you don't want to collect all results
+    /// but instead process each batch as it arrives (streaming processing).
+    ///
+    /// # Arguments
+    ///
+    /// * `operator` - Root of the operator tree
+    /// * `ctx` - Execution context
+    /// * `processor` - Function to process each batch
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - Processing completed
+    /// * `Err(QueryError)` - If processing fails
+    pub fn execute_streaming<F>(
+        &mut self,
+        mut operator: Box<dyn Operator>,
+        ctx: &mut ExecutionContext,
+        mut processor: F,
+    ) -> Result<(), QueryError>
+    where
+        F: FnMut(DataBatch) -> Result<(), QueryError>,
+    {
+        while let Some(batch) = operator.next_batch(ctx)? {
+            self.stats.rows_scanned += batch.len() as u64;
+
+            processor(batch)?;
+
+            // Check limits
+            if ctx.is_timed_out() {
+                return Err(QueryError::timeout("Query execution timed out"));
+            }
+            if ctx.is_memory_exceeded() {
+                return Err(QueryError::resource_limit("Memory limit exceeded"));
+            }
+        }
+
+        Ok(())
     }
 }
 

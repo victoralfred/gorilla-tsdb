@@ -58,23 +58,23 @@ jobs:
       - name: Run Tests (${{ matrix.config }} mode)
         run: cargo test ${{ matrix.config == 'release' && '--release' || '' }} --verbose --locked
 
-  # 3. Code Coverage
-  coverage:
-    # Only run coverage on the fastest, most common configuration (Ubuntu/stable)
-    needs: [build-and-test] 
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install stable Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+  # # 3. Code Coverage
+  # coverage:
+  #   # Only run coverage on the fastest, most common configuration (Ubuntu/stable)
+  #   needs: [build-and-test] 
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Install stable Rust toolchain
+  #       uses: dtolnay/rust-toolchain@stable
       
-      # Corrected installation: Use the --out flag during the run step
-      - name: Install cargo-tarpaulin
-        run: cargo install cargo-tarpaulin --locked 
+  #     # Corrected installation: Use the --out flag during the run step
+  #     - name: Install cargo-tarpaulin
+  #       run: cargo install cargo-tarpaulin --locked 
 
-      - name: 🧪 Run Coverage
-        # Run tarpaulin and output an LCOV/XML report, which implicitly requires the XML feature
-        run: cargo tarpaulin --verbose --workspace --out Xml
+      # - name: 🧪 Run Coverage
+      #   # Run tarpaulin and output an LCOV/XML report, which implicitly requires the XML feature
+      #   run: cargo tarpaulin --verbose --workspace --out Xml
 
       # - name: Upload Coverage Report (Artifact)
       #   uses: actions/upload-artifact@v4

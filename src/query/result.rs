@@ -86,6 +86,14 @@ impl QueryResult {
         self
     }
 
+    /// Create an explain result with plan text
+    pub fn explain(plan_text: String) -> Self {
+        Self {
+            metadata: ResultMetadata::default(),
+            data: ResultData::Explain(plan_text),
+        }
+    }
+
     /// Check if result is empty
     pub fn is_empty(&self) -> bool {
         self.metadata.row_count == 0
@@ -150,6 +158,10 @@ impl QueryResult {
                 output.push_str("value\n");
                 output.push_str(&format!("{}\n", value));
             }
+            ResultData::Explain(plan) => {
+                // For CSV, just output the plan as-is
+                output.push_str(plan);
+            }
         }
 
         output
@@ -203,6 +215,11 @@ impl QueryResult {
             ResultData::Scalar(value) => {
                 output.push_str(&format!("Result: {}\n", value));
             }
+            ResultData::Explain(plan) => {
+                // For table format, just output the plan
+                output.push_str(plan);
+                return output; // Skip metadata footer for explain
+            }
         }
 
         // Metadata footer
@@ -228,6 +245,9 @@ pub enum ResultData {
 
     /// Single scalar value (for simple aggregations)
     Scalar(f64),
+
+    /// Explain output (query plan as text)
+    Explain(String),
 }
 
 /// Single result row

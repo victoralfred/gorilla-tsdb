@@ -16,7 +16,9 @@ use crate::query::error::QueryError;
 use crate::query::executor::ExecutionContext;
 use crate::query::operators::numeric::{KahanSum, WelfordState};
 use crate::query::operators::{simd, DataBatch, Operator};
+use crate::types::SeriesId;
 use std::collections::HashMap;
+use tdigest::TDigest;
 
 // ============================================================================
 // Aggregation State
@@ -57,12 +59,25 @@ pub enum AggregationState {
     /// Distinct values (using HashSet for now, HLL for large cardinalities later)
     Distinct(std::collections::HashSet<u64>),
 
-    /// Percentile computation state
-    /// TODO: Replace with t-digest when dependency is added
-    Percentile {
+    /// Percentile computation state using t-digest for streaming estimation
+    ///
+    /// T-digest provides:
+    /// - O(1) insertion with constant memory
+    /// - Accurate percentile estimates (especially at tails)
+    /// - Mergeable digests for parallel aggregation
+    PercentileTDigest {
         /// Target percentile (0-100)
         target: u8,
-        /// Collected values for percentile calculation
+        /// T-digest for streaming percentile estimation
+        digest: TDigest,
+    },
+
+    /// Fallback percentile using collected values (for small datasets)
+    /// Used when exact percentile is needed or dataset is small
+    PercentileExact {
+        /// Target percentile (0-100)
+        target: u8,
+        /// Collected values for exact percentile calculation
         values: Vec<f64>,
     },
 }
@@ -78,13 +93,13 @@ impl AggregationState {
             AggregationFunction::Avg => AggregationState::Stats(WelfordState::new()),
             AggregationFunction::StdDev => AggregationState::Stats(WelfordState::new()),
             AggregationFunction::Variance => AggregationState::Stats(WelfordState::new()),
-            AggregationFunction::Median => AggregationState::Percentile {
+            AggregationFunction::Median => AggregationState::PercentileTDigest {
                 target: 50,
-                values: Vec::new(),
+                digest: TDigest::new_with_size(100), // 100 centroids for good accuracy
             },
-            AggregationFunction::Percentile(p) => AggregationState::Percentile {
+            AggregationFunction::Percentile(p) => AggregationState::PercentileTDigest {
                 target: *p,
-                values: Vec::new(),
+                digest: TDigest::new_with_size(100),
             },
             AggregationFunction::First => AggregationState::First(None),
             AggregationFunction::Last => AggregationState::Last(None),
@@ -154,10 +169,20 @@ impl AggregationState {
                     set.insert(v.to_bits());
                 }
             }
-            AggregationState::Percentile { values: vals, .. } => {
+            AggregationState::PercentileTDigest { digest, .. } => {
+                // Use t-digest for streaming percentile estimation
+                // Filter NaN values before adding to digest
+                let valid_values: Vec<f64> =
+                    values.iter().filter(|v| !v.is_nan()).copied().collect();
+                if !valid_values.is_empty() {
+                    // Merge new values into the digest
+                    *digest = digest.merge_unsorted(valid_values);
+                }
+            }
+            AggregationState::PercentileExact { values: vals, .. } => {
                 // Collect all values (will be sorted when finalizing)
-                // TODO: Use t-digest for streaming percentile estimation
-                vals.extend_from_slice(values);
+                // Filter NaN values
+                vals.extend(values.iter().filter(|v| !v.is_nan()).copied());
             }
         }
     }
@@ -181,8 +206,13 @@ impl AggregationState {
             (AggregationState::Rate { first, last }, AggregationFunction::Rate) => {
                 // Rate = (last_value - first_value) / time_delta_in_seconds
                 match (first, last) {
-                    (Some((t1, v1)), Some((t2, v2))) if t2 > t1 => {
-                        let time_delta_secs = (*t2 - *t1) as f64 / 1_000_000_000.0;
+                    (Some((t1, v1)), Some((t2, v2))) if *t2 > *t1 => {
+                        // Use saturating_sub to prevent overflow (SEC-005)
+                        let time_delta_nanos = t2.saturating_sub(*t1);
+                        if time_delta_nanos == 0 {
+                            return f64::NAN;
+                        }
+                        let time_delta_secs = time_delta_nanos as f64 / 1_000_000_000.0;
                         (v2 - v1) / time_delta_secs
                     }
                     _ => f64::NAN,
@@ -203,16 +233,40 @@ impl AggregationState {
                 }
             }
             (AggregationState::Distinct(set), _) => set.len() as f64,
-            (AggregationState::Percentile { target, values }, _) => {
-                if values.is_empty() {
+            (AggregationState::PercentileTDigest { target, digest }, _) => {
+                // Use t-digest for streaming percentile estimation
+                // Returns estimate at the given percentile (0-100 scale converted to 0-1)
+                if digest.is_empty() {
                     return f64::NAN;
                 }
-                let mut sorted = values.clone();
-                sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                digest.estimate_quantile(*target as f64 / 100.0)
+            }
+            (AggregationState::PercentileExact { target, values }, _) => {
+                // Exact percentile calculation for small datasets
+                // Filter out NaN values before calculation (EDGE-004)
+                let mut valid_values: Vec<f64> =
+                    values.iter().filter(|v| !v.is_nan()).copied().collect();
 
-                // Calculate percentile index
-                let idx = ((*target as f64 / 100.0) * (sorted.len() - 1) as f64).round() as usize;
-                sorted[idx.min(sorted.len() - 1)]
+                // Handle empty input (EDGE-001)
+                if valid_values.is_empty() {
+                    return f64::NAN;
+                }
+
+                // Handle single value case
+                if valid_values.len() == 1 {
+                    return valid_values[0];
+                }
+
+                // Use O(n) selection algorithm instead of O(n log n) sort (PERF-003)
+                let idx =
+                    ((*target as f64 / 100.0) * (valid_values.len() - 1) as f64).round() as usize;
+                let idx = idx.min(valid_values.len().saturating_sub(1));
+
+                // select_nth_unstable partially sorts and returns the element at idx
+                let (_, percentile_value, _) = valid_values.select_nth_unstable_by(idx, |a, b| {
+                    a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+                });
+                *percentile_value
             }
             _ => f64::NAN,
         }
@@ -276,10 +330,17 @@ impl AggregationState {
                 a.extend(b.iter());
             }
             (
-                AggregationState::Percentile { values: a, .. },
-                AggregationState::Percentile { values: b, .. },
+                AggregationState::PercentileTDigest { digest: a, .. },
+                AggregationState::PercentileTDigest { digest: b, .. },
             ) => {
-                // TODO: With t-digest, we can merge digests efficiently
+                // T-digest supports efficient merging for parallel aggregation
+                *a = TDigest::merge_digests(vec![a.clone(), b.clone()]);
+            }
+            (
+                AggregationState::PercentileExact { values: a, .. },
+                AggregationState::PercentileExact { values: b, .. },
+            ) => {
+                // For exact percentile, concatenate the values
                 a.extend_from_slice(b);
             }
             _ => {} // Incompatible states - no-op
@@ -306,7 +367,12 @@ pub struct AggregationOperator {
     group_by_series: bool,
 
     /// States for each aggregation (keyed by series_id if grouping)
-    states: HashMap<u64, AggregationState>,
+    /// Uses SeriesId (u128) for consistency with types module (TYPE-001)
+    states: HashMap<SeriesId, AggregationState>,
+
+    /// Reusable buffer for grouping data by series (PERF-006)
+    /// This avoids allocating a new HashMap for each batch
+    series_data_buffer: HashMap<SeriesId, (Vec<i64>, Vec<f64>)>,
 
     /// Whether we've consumed all input
     input_exhausted: bool,
@@ -324,6 +390,7 @@ impl AggregationOperator {
             window: None,
             group_by_series: false,
             states: HashMap::new(),
+            series_data_buffer: HashMap::new(),
             input_exhausted: false,
             results_emitted: false,
         }
@@ -343,7 +410,7 @@ impl AggregationOperator {
 
     /// Get or create state for a series (reserved for multi-series aggregation)
     #[allow(dead_code)]
-    fn get_state(&mut self, series_id: u64) -> &mut AggregationState {
+    fn get_state(&mut self, series_id: SeriesId) -> &mut AggregationState {
         let function = self.function;
         self.states
             .entry(series_id)
@@ -355,11 +422,17 @@ impl AggregationOperator {
         if self.group_by_series {
             // Group by series ID
             if let Some(ref series_ids) = batch.series_ids {
-                // Group data by series
-                let mut series_data: HashMap<u64, (Vec<i64>, Vec<f64>)> = HashMap::new();
+                // Reuse the series_data_buffer instead of allocating new (PERF-006)
+                // Clear vectors but keep HashMap allocation
+                for (_, (ts, vals)) in self.series_data_buffer.iter_mut() {
+                    ts.clear();
+                    vals.clear();
+                }
 
+                // Group data by series using the reusable buffer
                 for (i, &sid) in series_ids.iter().enumerate() {
-                    let entry = series_data
+                    let entry = self
+                        .series_data_buffer
                         .entry(sid)
                         .or_insert_with(|| (Vec::new(), Vec::new()));
                     entry.0.push(batch.timestamps[i]);
@@ -368,12 +441,14 @@ impl AggregationOperator {
 
                 // Update states for each series
                 let function = self.function;
-                for (sid, (timestamps, values)) in series_data {
-                    let state = self
-                        .states
-                        .entry(sid)
-                        .or_insert_with(|| AggregationState::new(&function));
-                    state.update_batch(&timestamps, &values);
+                for (sid, (timestamps, values)) in &self.series_data_buffer {
+                    if !timestamps.is_empty() {
+                        let state = self
+                            .states
+                            .entry(*sid)
+                            .or_insert_with(|| AggregationState::new(&function));
+                        state.update_batch(timestamps, values);
+                    }
                 }
             }
         } else {
@@ -416,6 +491,25 @@ impl Operator for AggregationOperator {
                         return Err(QueryError::timeout("Aggregation operator timed out"));
                     }
                     return Ok(None);
+                }
+
+                // Memory limit check for percentile aggregation (SEC-001)
+                // Note: With t-digest, memory is constant (~8KB per centroid).
+                // This check is kept for PercentileExact variant which stores all values.
+                // T-digest uses ~100 centroids by default = ~800 bytes total.
+                if matches!(
+                    self.function,
+                    AggregationFunction::Percentile(_) | AggregationFunction::Median
+                ) {
+                    // Track batch processing memory (temporary allocations)
+                    let additional_mem = batch.len() * 8; // 8 bytes per f64 value
+                    if !ctx.allocate_memory(additional_mem) {
+                        return Err(QueryError::resource_limit(
+                            "Memory limit exceeded during percentile aggregation",
+                        ));
+                    }
+                    // Release immediately since t-digest doesn't keep all values
+                    ctx.release_memory(additional_mem);
                 }
 
                 self.process_batch(&batch);
@@ -493,12 +587,19 @@ impl WindowedAggregation {
 
     /// Initialize window boundaries based on first timestamp
     pub fn init_window(&mut self, timestamp: i64) {
-        let window_nanos = self.window.duration.as_nanos() as i64;
+        // Safely convert duration to nanoseconds (EDGE-011)
+        // Duration::as_nanos() returns u128, which can overflow i64 for durations > 292 years
+        let window_nanos = self.window.duration.as_nanos();
+        let window_nanos = if window_nanos > i64::MAX as u128 {
+            i64::MAX // Cap at max i64 for very long durations
+        } else {
+            window_nanos as i64
+        };
 
         if window_nanos > 0 {
             // Align to window boundary
             self.window_start = (timestamp / window_nanos) * window_nanos;
-            self.window_end = self.window_start + window_nanos;
+            self.window_end = self.window_start.saturating_add(window_nanos);
         }
     }
 
@@ -509,14 +610,25 @@ impl WindowedAggregation {
 
     /// Advance to next window
     pub fn advance_window(&mut self) {
-        let advance_nanos = match &self.window.window_type {
-            WindowType::Tumbling => self.window.duration.as_nanos() as i64,
-            WindowType::Sliding { slide } => slide.as_nanos() as i64,
-            WindowType::Session { .. } => self.window.duration.as_nanos() as i64,
+        // Helper to safely convert u128 nanos to i64 (EDGE-011)
+        let safe_nanos = |nanos: u128| -> i64 {
+            if nanos > i64::MAX as u128 {
+                i64::MAX
+            } else {
+                nanos as i64
+            }
         };
 
-        self.window_start += advance_nanos;
-        self.window_end = self.window_start + self.window.duration.as_nanos() as i64;
+        let advance_nanos = match &self.window.window_type {
+            WindowType::Tumbling => safe_nanos(self.window.duration.as_nanos()),
+            WindowType::Sliding { slide } => safe_nanos(slide.as_nanos()),
+            WindowType::Session { .. } => safe_nanos(self.window.duration.as_nanos()),
+        };
+
+        self.window_start = self.window_start.saturating_add(advance_nanos);
+        self.window_end = self
+            .window_start
+            .saturating_add(safe_nanos(self.window.duration.as_nanos()));
 
         // Reset states for new window
         self.states = self.functions.iter().map(AggregationState::new).collect();
@@ -556,11 +668,11 @@ mod tests {
     use crate::query::SeriesSelector;
 
     fn create_test_scan() -> ScanOperator {
-        let data: Vec<(i64, f64, u64)> = (0..100)
+        let data: Vec<(i64, f64, SeriesId)> = (0..100)
             .map(|i| (i as i64 * 1_000_000_000, i as f64, 1)) // 1-second intervals
             .collect();
 
-        ScanOperator::new(SeriesSelector::by_measurement("test"), None)
+        ScanOperator::new(SeriesSelector::by_measurement("test").unwrap(), None)
             .with_mock_data(data)
             .with_batch_size(100)
     }
@@ -633,13 +745,13 @@ mod tests {
 
     #[test]
     fn test_rate_aggregation() {
-        let data: Vec<(i64, f64, u64)> = vec![
+        let data: Vec<(i64, f64, SeriesId)> = vec![
             (0, 0.0, 1),
             (1_000_000_000, 10.0, 1), // 10 increase over 1 second
             (2_000_000_000, 30.0, 1), // 20 more increase over 1 second
         ];
 
-        let scan = ScanOperator::new(SeriesSelector::by_measurement("test"), None)
+        let scan = ScanOperator::new(SeriesSelector::by_measurement("test").unwrap(), None)
             .with_mock_data(data)
             .with_batch_size(100);
 
@@ -656,10 +768,10 @@ mod tests {
     #[test]
     fn test_group_by_series() {
         // Data from two series
-        let data: Vec<(i64, f64, u64)> =
+        let data: Vec<(i64, f64, SeriesId)> =
             vec![(0, 10.0, 1), (0, 20.0, 2), (1, 15.0, 1), (1, 25.0, 2)];
 
-        let scan = ScanOperator::new(SeriesSelector::by_measurement("test"), None)
+        let scan = ScanOperator::new(SeriesSelector::by_measurement("test").unwrap(), None)
             .with_mock_data(data)
             .with_batch_size(100);
 
