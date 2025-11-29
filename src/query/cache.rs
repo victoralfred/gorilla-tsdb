@@ -8,8 +8,9 @@
 
 use crate::query::ast::Query;
 use crate::query::result::QueryResult;
+use crate::types::SeriesId;
 use parking_lot::RwLock;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -110,11 +111,14 @@ struct CacheEntry {
 
     /// Last access time (for LRU)
     last_accessed: Instant,
+
+    /// Series IDs this entry depends on (for invalidation)
+    series_ids: HashSet<SeriesId>,
 }
 
 impl CacheEntry {
     /// Create a new cache entry
-    fn new(result: QueryResult, ttl: Duration) -> Self {
+    fn new(result: QueryResult, ttl: Duration, series_ids: HashSet<SeriesId>) -> Self {
         let size_bytes = Self::estimate_size(&result);
         let now = Instant::now();
         Self {
@@ -123,6 +127,7 @@ impl CacheEntry {
             ttl,
             size_bytes,
             last_accessed: now,
+            series_ids,
         }
     }
 
@@ -167,13 +172,17 @@ impl CacheEntry {
 // Query Cache
 // ============================================================================
 
-/// LRU cache for query results
+/// LRU cache for query results with series-based invalidation
 pub struct QueryCache {
     /// Cache configuration
     config: CacheConfig,
 
     /// Cached entries
     entries: RwLock<HashMap<CacheKey, CacheEntry>>,
+
+    /// Reverse index: series_id -> cache keys that depend on it
+    /// Used for efficient invalidation when series data changes
+    series_index: RwLock<HashMap<SeriesId, HashSet<CacheKey>>>,
 
     /// Current total size in bytes
     current_size: AtomicU64,
@@ -193,6 +202,9 @@ pub struct CacheStats {
 
     /// Total evictions
     pub evictions: AtomicU64,
+
+    /// Total invalidations triggered
+    pub invalidations: AtomicU64,
 }
 
 impl QueryCache {
@@ -201,6 +213,7 @@ impl QueryCache {
         Self {
             config,
             entries: RwLock::new(HashMap::new()),
+            series_index: RwLock::new(HashMap::new()),
             current_size: AtomicU64::new(0),
             stats: CacheStats::default(),
         }
@@ -249,28 +262,118 @@ impl QueryCache {
         }
 
         let key = CacheKey::from_query(query);
-        let entry = CacheEntry::new(result, ttl);
+
+        // Extract series IDs from the query for invalidation tracking
+        let series_ids = Self::extract_series_ids(query);
+
+        let entry = CacheEntry::new(result, ttl, series_ids.clone());
         let entry_size = entry.size_bytes;
 
         self.evict_if_needed(entry_size);
 
         let mut entries = self.entries.write();
 
+        // Remove old entry from series index if it exists
         if let Some(old_entry) = entries.get(&key) {
             let old_size = old_entry.size_bytes as u64;
             self.current_size.fetch_sub(old_size, Ordering::Relaxed);
+
+            // Remove from series index
+            let mut series_idx = self.series_index.write();
+            for sid in &old_entry.series_ids {
+                if let Some(keys) = series_idx.get_mut(sid) {
+                    keys.remove(&key);
+                }
+            }
+        }
+
+        // Add to series index
+        {
+            let mut series_idx = self.series_index.write();
+            for sid in &series_ids {
+                series_idx.entry(*sid).or_default().insert(key);
+            }
         }
 
         self.current_size.fetch_add(entry_size as u64, Ordering::Relaxed);
         entries.insert(key, entry);
     }
 
+    /// Extract series IDs from a query for invalidation tracking
+    fn extract_series_ids(query: &Query) -> HashSet<SeriesId> {
+        let mut series_ids = HashSet::new();
+
+        // Get the series selector from the query
+        if let Some(series_id) = query.series_selector().series_id {
+            series_ids.insert(series_id);
+        }
+
+        series_ids
+    }
+
     /// Invalidate a specific query from cache
     pub fn invalidate(&self, query: &Query) {
         let key = CacheKey::from_query(query);
+        self.invalidate_key(key);
+    }
+
+    /// Invalidate all cached queries that depend on a specific series
+    ///
+    /// Call this when data is written to a series to ensure cache freshness.
+    /// This is O(n) where n is the number of queries cached for this series.
+    pub fn invalidate_series(&self, series_id: SeriesId) {
+        // Get all cache keys that depend on this series
+        let keys_to_invalidate: Vec<CacheKey> = {
+            let series_idx = self.series_index.read();
+            series_idx
+                .get(&series_id)
+                .map(|keys| keys.iter().copied().collect())
+                .unwrap_or_default()
+        };
+
+        // Invalidate each key
+        for key in keys_to_invalidate {
+            self.invalidate_key(key);
+        }
+    }
+
+    /// Invalidate all cached queries for multiple series
+    ///
+    /// More efficient than calling invalidate_series multiple times.
+    pub fn invalidate_series_batch(&self, series_ids: &[SeriesId]) {
+        // Collect all unique keys to invalidate
+        let keys_to_invalidate: HashSet<CacheKey> = {
+            let series_idx = self.series_index.read();
+            series_ids
+                .iter()
+                .filter_map(|sid| series_idx.get(sid))
+                .flat_map(|keys| keys.iter().copied())
+                .collect()
+        };
+
+        // Invalidate each key
+        for key in keys_to_invalidate {
+            self.invalidate_key(key);
+        }
+    }
+
+    /// Internal method to invalidate a cache key
+    fn invalidate_key(&self, key: CacheKey) {
         let mut entries = self.entries.write();
         if let Some(entry) = entries.remove(&key) {
             self.current_size.fetch_sub(entry.size_bytes as u64, Ordering::Relaxed);
+            self.stats.invalidations.fetch_add(1, Ordering::Relaxed);
+
+            // Remove from series index
+            let mut series_idx = self.series_index.write();
+            for sid in &entry.series_ids {
+                if let Some(keys) = series_idx.get_mut(sid) {
+                    keys.remove(&key);
+                    if keys.is_empty() {
+                        series_idx.remove(sid);
+                    }
+                }
+            }
         }
     }
 
@@ -278,6 +381,7 @@ impl QueryCache {
     pub fn clear(&self) {
         let mut entries = self.entries.write();
         entries.clear();
+        self.series_index.write().clear();
         self.current_size.store(0, Ordering::Relaxed);
     }
 
@@ -431,5 +535,80 @@ mod tests {
 
         cache.put(&query, result);
         assert!(cache.get(&query).is_none());
+    }
+
+    #[test]
+    fn test_invalidate_series() {
+        let cache = QueryCache::new(CacheConfig::default());
+
+        // Cache queries for series 1 and series 2
+        let query1 = make_select_query(1);
+        let query2 = make_select_query(2);
+
+        cache.put(&query1, QueryResult::empty());
+        cache.put(&query2, QueryResult::empty());
+
+        assert!(cache.get(&query1).is_some());
+        assert!(cache.get(&query2).is_some());
+
+        // Invalidate series 1 - should only remove query1
+        cache.invalidate_series(1);
+
+        assert!(cache.get(&query1).is_none());
+        assert!(cache.get(&query2).is_some());
+
+        // Check invalidation count
+        assert_eq!(cache.stats.invalidations.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn test_invalidate_series_batch() {
+        let cache = QueryCache::new(CacheConfig::default());
+
+        // Cache queries for multiple series
+        for i in 0..5 {
+            let query = make_select_query(i);
+            cache.put(&query, QueryResult::empty());
+        }
+
+        assert_eq!(cache.entry_count(), 5);
+
+        // Invalidate series 1, 2, and 3
+        cache.invalidate_series_batch(&[1, 2, 3]);
+
+        assert_eq!(cache.entry_count(), 2);
+
+        // Series 0 and 4 should still be cached
+        assert!(cache.get(&make_select_query(0)).is_some());
+        assert!(cache.get(&make_select_query(4)).is_some());
+
+        // Series 1, 2, 3 should be invalidated
+        assert!(cache.get(&make_select_query(1)).is_none());
+        assert!(cache.get(&make_select_query(2)).is_none());
+        assert!(cache.get(&make_select_query(3)).is_none());
+    }
+
+    #[test]
+    fn test_series_index_cleanup() {
+        let cache = QueryCache::new(CacheConfig::default());
+
+        // Add and then invalidate a query
+        let query = make_select_query(42);
+        cache.put(&query, QueryResult::empty());
+
+        // Verify series is in index
+        {
+            let idx = cache.series_index.read();
+            assert!(idx.contains_key(&42));
+        }
+
+        // Invalidate the query
+        cache.invalidate(&query);
+
+        // Series should be removed from index since no queries depend on it
+        {
+            let idx = cache.series_index.read();
+            assert!(!idx.contains_key(&42));
+        }
     }
 }
