@@ -1460,7 +1460,7 @@ mod tests {
 
         // Should get no chunks
         let mut count = 0;
-        while let Some(_) = stream.next().await {
+        while (stream.next().await).is_some() {
             count += 1;
         }
 
