@@ -63,8 +63,9 @@ fn test_sv1_4_null_byte_injection() {
     );
 }
 
-/// SV-1.5: Test symlink attacks
+/// SV-1.5: Test symlink attacks (Unix only - symlinks work differently on Windows)
 #[test]
+#[cfg(unix)]
 fn test_sv1_5_symlink_attack() {
     use std::fs;
     use std::os::unix::fs::symlink;

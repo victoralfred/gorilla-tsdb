@@ -248,8 +248,7 @@ impl MmapChunk {
         // Verify checksum on compressed data
         Self::verify_checksum(&mmap, &header)?;
 
-        // Apply madvise hints for sequential access (platform-specific)
-        #[cfg(unix)]
+        // Apply madvise hints for sequential access (no-op on non-Unix)
         Self::apply_madvise(&mmap, MmapAdvise::Sequential)?;
 
         Ok(Self {
@@ -482,9 +481,8 @@ impl MmapChunk {
     /// - Subsequent reads will be faster (no page faults)
     /// - Most effective for cold data
     pub fn prefetch(&self) -> Result<(), MmapError> {
-        #[cfg(unix)]
+        // Apply madvise hint (no-op on non-Unix)
         Self::apply_madvise(&self.mmap, MmapAdvise::WillNeed)?;
-
         Ok(())
     }
 

@@ -188,6 +188,7 @@ pub mod security {
             .unwrap_or(false)
     }
 
+    /// Check if a path is a symlink (Windows version)
     #[cfg(not(unix))]
     pub fn is_symlink(path: &Path) -> bool {
         path.symlink_metadata()
