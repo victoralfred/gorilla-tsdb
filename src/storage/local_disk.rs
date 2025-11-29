@@ -412,12 +412,14 @@ impl StorageEngine for LocalDiskEngine {
         file.read_exact(&mut compressed_data).await?;
 
         // Verify checksum
-        if header.checksum
-            != crate::compression::gorilla::GorillaCompressor::calculate_checksum(&compressed_data)
-        {
-            return Err(StorageError::ChunkNotFound(
-                "Chunk checksum verification failed".to_string(),
-            ));
+        // ERR-001: Use specific ChecksumMismatch error with expected/actual values
+        let calculated_checksum =
+            crate::compression::gorilla::GorillaCompressor::calculate_checksum(&compressed_data);
+        if header.checksum != calculated_checksum {
+            return Err(StorageError::ChecksumMismatch {
+                expected: header.checksum,
+                actual: calculated_checksum,
+            });
         }
 
         // Update stats
@@ -711,14 +713,16 @@ impl StorageEngine for LocalDiskEngine {
                     file.read_exact(&mut compressed_data).await?;
 
                     // Verify checksum
-                    if header.checksum
-                        != crate::compression::gorilla::GorillaCompressor::calculate_checksum(
+                    // ERR-001: Use specific ChecksumMismatch error with expected/actual values
+                    let calculated_checksum =
+                        crate::compression::gorilla::GorillaCompressor::calculate_checksum(
                             &compressed_data,
-                        )
-                    {
-                        return Err(StorageError::CorruptedData(
-                            "Chunk checksum verification failed".to_string(),
-                        ));
+                        );
+                    if header.checksum != calculated_checksum {
+                        return Err(StorageError::ChecksumMismatch {
+                            expected: header.checksum,
+                            actual: calculated_checksum,
+                        });
                     }
 
                     // Fix PERF-001: Use read lock only for stats update
@@ -1320,6 +1324,17 @@ mod tests {
         // Reading should fail due to checksum mismatch
         let result = engine.read_chunk(&location).await;
         assert!(result.is_err());
+
+        // Verify we get the specific ChecksumMismatch error
+        match result {
+            Err(StorageError::ChecksumMismatch { expected, actual }) => {
+                // Expected checksum is from the original valid data
+                assert_eq!(expected, checksum);
+                // Actual checksum should be different due to corruption
+                assert_ne!(expected, actual);
+            }
+            other => panic!("Expected ChecksumMismatch error, got: {:?}", other),
+        }
     }
 
     #[tokio::test]

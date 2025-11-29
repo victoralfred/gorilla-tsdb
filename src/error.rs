@@ -84,6 +84,18 @@ pub enum StorageError {
     /// Data is corrupted
     #[error("Corrupted data: {0}")]
     CorruptedData(String),
+
+    /// Checksum verification failed
+    ///
+    /// Provides detailed information about the expected vs actual checksum
+    /// for debugging data corruption issues.
+    #[error("Checksum mismatch: expected {expected:#x}, got {actual:#x}")]
+    ChecksumMismatch {
+        /// The expected checksum value from the header
+        expected: u64,
+        /// The actual checksum computed from the data
+        actual: u64,
+    },
 }
 
 /// Ingestion errors
