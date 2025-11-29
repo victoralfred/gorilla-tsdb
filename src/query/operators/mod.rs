@@ -12,6 +12,7 @@
 pub mod aggregation;
 pub mod downsample;
 pub mod filter;
+pub mod parallel;
 pub mod scan;
 pub mod storage_scan;
 
@@ -19,6 +20,7 @@ pub mod storage_scan;
 pub use aggregation::{AggregationOperator, AggregationState};
 pub use downsample::DownsampleOperator;
 pub use filter::FilterOperator;
+pub use parallel::{ParallelAggregator, ParallelConfig, ParallelScanner};
 pub use scan::ScanOperator;
 pub use storage_scan::{StorageQueryExt, StorageScanOperator};
 
