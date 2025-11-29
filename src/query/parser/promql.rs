@@ -464,8 +464,9 @@ mod tests {
         assert!(result.is_ok());
         match result.unwrap() {
             Query::Select(q) => {
+                // TimeRange uses milliseconds, 5 minutes = 300,000 ms
                 let duration = q.time_range.end - q.time_range.start;
-                assert!((299_000_000_000..=301_000_000_000).contains(&duration));
+                assert!((299_000..=301_000).contains(&duration));
             }
             _ => panic!("Expected Select query"),
         }
