@@ -14,9 +14,17 @@ pub struct WalConfig {
     pub segment_size: usize,
     /// Sync mode for durability
     pub sync_mode: SyncMode,
-    /// Write buffer size (number of pending writes)
+    /// Write buffer size (number of pending writes in channel)
+    ///
+    /// This determines the capacity of the channel between writers and the WAL writer task.
+    /// Higher values allow more buffering but use more memory.
     pub write_buffer_size: usize,
     /// Maximum number of segments to retain
+    ///
+    /// **Note**: This field is currently validated but not enforced during cleanup.
+    /// Segment cleanup is currently based on checkpoint sequence numbers only.
+    /// This field is retained for future segment count-based retention support.
+    // TODO: Implement segment count-based retention in cleanup()
     pub max_segments: usize,
 }
 

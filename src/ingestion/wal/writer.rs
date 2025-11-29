@@ -148,7 +148,14 @@ impl WalWriter {
             }
 
             // Write to current segment
-            let segment = self.active_segment.as_ref().unwrap();
+            // EDGE-012: Use proper error handling instead of unwrap after rotation
+            let segment = self.active_segment.as_ref().ok_or_else(|| WalError::Io {
+                source: std::io::Error::new(
+                    std::io::ErrorKind::NotConnected,
+                    "segment unavailable after rotation",
+                ),
+                context: "flush after rotation".to_string(),
+            })?;
             segment.write_record(&record, sequence)?;
         }
 
@@ -342,11 +349,29 @@ impl WriteCoalescer {
     }
 
     /// Flush the buffer
+    ///
+    /// # Panic Safety
+    ///
+    /// If the `on_flush` callback panics, the buffer data is preserved and
+    /// will be available for retry on the next flush call.
     pub fn flush(&mut self) {
         if !self.buffer.is_empty() {
+            // EDGE-013: Use catch_unwind to preserve buffer on callback panic
+            // Take buffer temporarily, restore if callback panics
             let points = std::mem::take(&mut self.buffer);
+            let points_backup = points.clone();
             self.buffer = Vec::with_capacity(self.max_size);
-            (self.on_flush)(points);
+
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                (self.on_flush)(points);
+            }));
+
+            if let Err(panic_payload) = result {
+                // Restore buffer on panic so data is not lost
+                self.buffer = points_backup;
+                // Re-panic after restoring buffer
+                std::panic::resume_unwind(panic_payload);
+            }
         }
     }
 }

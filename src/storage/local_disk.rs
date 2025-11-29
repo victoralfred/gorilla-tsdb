@@ -14,6 +14,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::fs;
+use tracing::warn;
 
 /// Local disk storage engine
 ///
@@ -841,8 +842,12 @@ impl StorageEngine for LocalDiskEngine {
                     // File already deleted, just clean up index
                 }
                 Err(e) => {
-                    // Log but continue with other chunks
-                    eprintln!("Failed to delete chunk {:?}: {}", path, e);
+                    // ERR-002: Use proper logging instead of eprintln
+                    warn!(
+                        path = ?path,
+                        error = %e,
+                        "Failed to delete chunk during maintenance"
+                    );
                     continue;
                 }
             }
