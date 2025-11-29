@@ -1,0 +1,37 @@
+# Build artifacts
+target/
+debug/
+release/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Documentation (not needed in image)
+*.md
+docs/
+
+# Test files and coverage
+coverage/
+*.profraw
+*.profdata
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Rust specific
+**/*.rs.bk
+Cargo.lock.bak

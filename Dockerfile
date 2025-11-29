@@ -4,16 +4,14 @@
 # ============================================================
 # Stage 1: BUILDER
 # ============================================================
-FROM  rust:buster AS builder
+FROM rust:1.85-bookworm AS builder
 
 # Define app name for clarity and re-use
 ENV APP_NAME=tsdb-server
 ENV CARGO_HOME=/usr/local/cargo
 
-# Overwrite the sources list to point to the archive servers
-RUN echo "deb http://archive.debian.org/debian buster main" > /etc/apt/sources.list && \
-    echo "deb http://archive.debian.org/debian-security buster/updates main" >> /etc/apt/sources.list && \
-    apt update && apt install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+# Install build dependencies
+RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
 
 # 2. Setup Workdir and Copy Manifests
 WORKDIR /app
@@ -21,12 +19,17 @@ COPY Cargo.toml Cargo.lock ./
 
 # 3. Dependency Caching Layer
 # Create dummy files to force cargo to only compile dependencies
-RUN mkdir src && \
+# Also create placeholder bench files referenced in Cargo.toml
+RUN mkdir -p src benches src/bin && \
     echo "fn main() {}" > src/main.rs && \
-    echo "pub fn dummy() {}" > src/lib.rs
+    echo "fn main() {}" > src/bin/server.rs && \
+    echo "pub fn dummy() {}" > src/lib.rs && \
+    echo "fn main() {}" > benches/compression.rs && \
+    echo "fn main() {}" > benches/ingestion.rs && \
+    echo "fn main() {}" > benches/mmap_performance.rs
 
-# Build dependencies (This fills the target/debug or target/release folder with cached dependency artifacts)
-RUN cargo build --release
+# Build dependencies (This fills the target/release folder with cached dependency artifacts)
+RUN cargo build --release --lib
 
 # Clean up temporary build artifacts (this must be a separate layer or the shell fails silently)
 RUN rm -f target/release/${APP_NAME} || true \
