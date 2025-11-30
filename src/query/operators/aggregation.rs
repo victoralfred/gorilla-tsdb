@@ -408,8 +408,10 @@ impl AggregationOperator {
         self
     }
 
-    /// Get or create state for a series (reserved for multi-series aggregation)
-    #[allow(dead_code)]
+    /// Get or create state for a series
+    ///
+    /// Used for multi-series aggregation where each series maintains
+    /// its own aggregation state (e.g., separate averages per host).
     fn get_state(&mut self, series_id: SeriesId) -> &mut AggregationState {
         let function = self.function;
         self.states
@@ -439,26 +441,28 @@ impl AggregationOperator {
                     entry.1.push(batch.values[i]);
                 }
 
-                // Update states for each series
-                let function = self.function;
-                for (sid, (timestamps, values)) in &self.series_data_buffer {
-                    if !timestamps.is_empty() {
-                        let state = self
-                            .states
-                            .entry(*sid)
-                            .or_insert_with(|| AggregationState::new(&function));
-                        state.update_batch(timestamps, values);
+                // Collect series IDs to process (avoids borrow conflict)
+                let series_to_update: Vec<SeriesId> = self
+                    .series_data_buffer
+                    .keys()
+                    .copied()
+                    .collect();
+
+                // Update states for each series using get_state helper
+                for sid in series_to_update {
+                    if let Some((timestamps, values)) = self.series_data_buffer.get(&sid) {
+                        if !timestamps.is_empty() {
+                            // Clone data to avoid borrow conflict
+                            let ts = timestamps.clone();
+                            let vals = values.clone();
+                            self.get_state(sid).update_batch(&ts, &vals);
+                        }
                     }
                 }
             }
         } else {
             // Global aggregation - all data goes to series 0
-            let function = self.function;
-            let state = self
-                .states
-                .entry(0)
-                .or_insert_with(|| AggregationState::new(&function));
-            state.update_batch(&batch.timestamps, &batch.values);
+            self.get_state(0).update_batch(&batch.timestamps, &batch.values);
         }
     }
 

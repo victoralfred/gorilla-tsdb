@@ -227,8 +227,7 @@ struct SeriesSubscription {
     /// Sequence counter for ordering
     sequence: AtomicU64,
 
-    /// When subscription was created (for stale cleanup)
-    #[allow(dead_code)]
+    /// When subscription was created (for stale cleanup policies)
     created_at: Instant,
 }
 
@@ -270,8 +269,10 @@ impl SeriesSubscription {
     }
 
     /// Get age of this subscription (for stale cleanup policies)
-    #[allow(dead_code)]
-    fn age(&self) -> Duration {
+    ///
+    /// Returns the duration since this subscription was created.
+    /// Used by cleanup logic to identify stale subscriptions.
+    pub fn age(&self) -> Duration {
         self.created_at.elapsed()
     }
 }
@@ -470,6 +471,9 @@ impl SubscriptionManager {
     }
 
     /// Clean up stale subscriptions (series with no subscribers)
+    ///
+    /// Removes subscriptions that have no active subscribers.
+    /// For age-based cleanup, use `cleanup_stale_with_age`.
     pub fn cleanup_stale(&self) {
         let mut subs = self.subscriptions.write();
         let before = subs.len();
@@ -480,6 +484,31 @@ impl SubscriptionManager {
                 .active_series
                 .fetch_sub(removed as u64, Ordering::Relaxed);
         }
+    }
+
+    /// Clean up stale subscriptions with age check
+    ///
+    /// Removes subscriptions that have no active subscribers AND are older
+    /// than the specified max_age. This prevents premature cleanup of
+    /// newly created subscriptions that haven't received subscribers yet.
+    ///
+    /// Returns the number of subscriptions removed.
+    pub fn cleanup_stale_with_age(&self, max_age: Duration) -> usize {
+        let mut subs = self.subscriptions.write();
+        let before = subs.len();
+
+        subs.retain(|_, sub| {
+            // Keep if has subscribers OR is younger than max_age
+            sub.subscriber_count() > 0 || sub.age() < max_age
+        });
+
+        let removed = before - subs.len();
+        if removed > 0 {
+            self.stats
+                .active_series
+                .fetch_sub(removed as u64, Ordering::Relaxed);
+        }
+        removed
     }
 
     /// Get statistics snapshot

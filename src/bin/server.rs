@@ -79,13 +79,14 @@ use gorilla_tsdb::{
     compression::gorilla::GorillaCompressor,
     engine::{DatabaseConfig, DatabaseStats, InMemoryTimeIndex, TimeSeriesDB, TimeSeriesDBBuilder},
     query::{
-        parse_promql, parse_sql, AggregationFunction as QueryAggFunction, Query as ParsedQuery,
+        parse_promql, parse_sql, subscription::{SubscriptionConfig, SubscriptionManager},
+        AggregationFunction as QueryAggFunction, Query as ParsedQuery,
     },
     storage::LocalDiskEngine,
     types::{DataPoint, SeriesId, TagFilter, TimeRange},
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 use tokio::signal;
 use tracing::{error, info, warn};
 
@@ -119,6 +120,18 @@ pub struct ServerConfig {
     /// Maximum points per write request
     #[serde(default = "default_max_write_points")]
     pub max_write_points: usize,
+
+    /// Subscription cleanup interval in seconds (0 = disabled)
+    #[serde(default = "default_subscription_cleanup_interval")]
+    pub subscription_cleanup_interval_secs: u64,
+
+    /// Maximum age of stale subscriptions in seconds before cleanup
+    #[serde(default = "default_subscription_max_age")]
+    pub subscription_max_age_secs: u64,
+
+    /// Metrics histogram reset interval in seconds (0 = disabled)
+    #[serde(default)]
+    pub metrics_reset_interval_secs: u64,
 }
 
 fn default_listen_addr() -> String {
@@ -141,6 +154,14 @@ fn default_max_write_points() -> usize {
     100_000
 }
 
+fn default_subscription_cleanup_interval() -> u64 {
+    300 // 5 minutes
+}
+
+fn default_subscription_max_age() -> u64 {
+    3600 // 1 hour
+}
+
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
@@ -150,6 +171,9 @@ impl Default for ServerConfig {
             retention_days: None,
             enable_metrics: true,
             max_write_points: default_max_write_points(),
+            subscription_cleanup_interval_secs: default_subscription_cleanup_interval(),
+            subscription_max_age_secs: default_subscription_max_age(),
+            metrics_reset_interval_secs: 0, // Disabled by default
         }
     }
 }
@@ -164,6 +188,8 @@ struct AppState {
     /// Storage engine reference for series metadata persistence
     storage: Arc<LocalDiskEngine>,
     config: ServerConfig,
+    /// Subscription manager for live query subscriptions
+    subscriptions: Arc<SubscriptionManager>,
 }
 
 // =============================================================================
@@ -328,10 +354,24 @@ struct StatsResponse {
     write_ops: u64,
     read_ops: u64,
     compression_ratio: f64,
+    /// Index cache statistics for monitoring cache effectiveness
+    index_cache_hits: u64,
+    index_cache_misses: u64,
+    index_queries_served: u64,
+    /// Cache hit rate as a percentage (0.0 to 100.0)
+    index_cache_hit_rate: f64,
 }
 
 impl From<DatabaseStats> for StatsResponse {
     fn from(stats: DatabaseStats) -> Self {
+        // Calculate cache hit rate
+        let total_cache_ops = stats.index_cache_hits + stats.index_cache_misses;
+        let cache_hit_rate = if total_cache_ops > 0 {
+            (stats.index_cache_hits as f64 / total_cache_ops as f64) * 100.0
+        } else {
+            0.0
+        };
+
         Self {
             total_chunks: stats.total_chunks,
             total_bytes: stats.total_bytes,
@@ -339,6 +379,10 @@ impl From<DatabaseStats> for StatsResponse {
             write_ops: stats.write_ops,
             read_ops: stats.read_ops,
             compression_ratio: stats.compression_ratio,
+            index_cache_hits: stats.index_cache_hits,
+            index_cache_misses: stats.index_cache_misses,
+            index_queries_served: stats.index_queries_served,
+            index_cache_hit_rate: cache_hit_rate,
         }
     }
 }
@@ -1377,10 +1421,97 @@ async fn get_stats(State(state): State<Arc<AppState>>) -> Json<StatsResponse> {
     Json(state.db.stats().into())
 }
 
-/// Prometheus metrics endpoint (placeholder)
-async fn metrics() -> impl IntoResponse {
-    // TODO: Implement proper Prometheus metrics export
-    "# HELP tsdb_up Indicates if TSDB is up\n# TYPE tsdb_up gauge\ntsdb_up 1\n"
+/// Prometheus metrics endpoint
+///
+/// Exports metrics in Prometheus text format for scraping by Prometheus server.
+/// Includes storage, compression, index cache, subscription, and operational metrics.
+async fn metrics(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let stats = state.db.stats();
+    let sub_stats = state.subscriptions.stats();
+
+    // Calculate cache hit rate
+    let total_cache_ops = stats.index_cache_hits + stats.index_cache_misses;
+    let cache_hit_rate = if total_cache_ops > 0 {
+        stats.index_cache_hits as f64 / total_cache_ops as f64
+    } else {
+        0.0
+    };
+
+    format!(
+        "# HELP tsdb_up Indicates if TSDB is up\n\
+         # TYPE tsdb_up gauge\n\
+         tsdb_up 1\n\
+         \n\
+         # HELP tsdb_chunks_total Total number of chunks stored\n\
+         # TYPE tsdb_chunks_total gauge\n\
+         tsdb_chunks_total {}\n\
+         \n\
+         # HELP tsdb_bytes_total Total bytes stored\n\
+         # TYPE tsdb_bytes_total gauge\n\
+         tsdb_bytes_total {}\n\
+         \n\
+         # HELP tsdb_series_total Total number of time series\n\
+         # TYPE tsdb_series_total gauge\n\
+         tsdb_series_total {}\n\
+         \n\
+         # HELP tsdb_write_ops_total Total write operations\n\
+         # TYPE tsdb_write_ops_total counter\n\
+         tsdb_write_ops_total {}\n\
+         \n\
+         # HELP tsdb_read_ops_total Total read operations\n\
+         # TYPE tsdb_read_ops_total counter\n\
+         tsdb_read_ops_total {}\n\
+         \n\
+         # HELP tsdb_compression_ratio Average compression ratio\n\
+         # TYPE tsdb_compression_ratio gauge\n\
+         tsdb_compression_ratio {:.4}\n\
+         \n\
+         # HELP tsdb_index_cache_hits_total Index cache hits\n\
+         # TYPE tsdb_index_cache_hits_total counter\n\
+         tsdb_index_cache_hits_total {}\n\
+         \n\
+         # HELP tsdb_index_cache_misses_total Index cache misses\n\
+         # TYPE tsdb_index_cache_misses_total counter\n\
+         tsdb_index_cache_misses_total {}\n\
+         \n\
+         # HELP tsdb_index_queries_total Total index queries served\n\
+         # TYPE tsdb_index_queries_total counter\n\
+         tsdb_index_queries_total {}\n\
+         \n\
+         # HELP tsdb_index_cache_hit_rate Index cache hit rate (0.0 to 1.0)\n\
+         # TYPE tsdb_index_cache_hit_rate gauge\n\
+         tsdb_index_cache_hit_rate {:.4}\n\
+         \n\
+         # HELP tsdb_subscriptions_created_total Total subscriptions created\n\
+         # TYPE tsdb_subscriptions_created_total counter\n\
+         tsdb_subscriptions_created_total {}\n\
+         \n\
+         # HELP tsdb_subscription_updates_sent_total Total updates sent to subscribers\n\
+         # TYPE tsdb_subscription_updates_sent_total counter\n\
+         tsdb_subscription_updates_sent_total {}\n\
+         \n\
+         # HELP tsdb_subscription_updates_dropped_total Updates dropped (no subscribers)\n\
+         # TYPE tsdb_subscription_updates_dropped_total counter\n\
+         tsdb_subscription_updates_dropped_total {}\n\
+         \n\
+         # HELP tsdb_active_subscriptions Active series with subscriptions\n\
+         # TYPE tsdb_active_subscriptions gauge\n\
+         tsdb_active_subscriptions {}\n",
+        stats.total_chunks,
+        stats.total_bytes,
+        stats.total_series,
+        stats.write_ops,
+        stats.read_ops,
+        stats.compression_ratio,
+        stats.index_cache_hits,
+        stats.index_cache_misses,
+        stats.index_queries_served,
+        cache_hit_rate,
+        sub_stats.subscriptions_created,
+        sub_stats.updates_sent,
+        sub_stats.updates_dropped,
+        sub_stats.active_series,
+    )
 }
 
 // =============================================================================
@@ -1691,12 +1822,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (db, storage) = init_database(&config).await?;
     info!("Database initialized successfully");
 
+    // Create subscription manager
+    let subscriptions = Arc::new(SubscriptionManager::new(SubscriptionConfig::default()));
+
     // Create application state
     let state = Arc::new(AppState {
         db,
         storage,
         config: config.clone(),
+        subscriptions: subscriptions.clone(),
     });
+
+    // Spawn subscription cleanup task if enabled
+    if config.subscription_cleanup_interval_secs > 0 {
+        let cleanup_subscriptions = subscriptions.clone();
+        let cleanup_interval = Duration::from_secs(config.subscription_cleanup_interval_secs);
+        let max_age = Duration::from_secs(config.subscription_max_age_secs);
+
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(cleanup_interval).await;
+                let removed = cleanup_subscriptions.cleanup_stale_with_age(max_age);
+                if removed > 0 {
+                    info!("Cleaned up {} stale subscriptions", removed);
+                }
+            }
+        });
+        info!(
+            "Subscription cleanup task started (interval: {}s, max_age: {}s)",
+            config.subscription_cleanup_interval_secs,
+            config.subscription_max_age_secs
+        );
+    }
 
     // Build router
     let app = build_router(state);

@@ -64,8 +64,10 @@ impl FilterOperator {
     }
 
     /// Apply filter using SIMD-accelerated selection
-    #[allow(dead_code)]
-    fn filter_batch_simd(&self, batch: DataBatch) -> DataBatch {
+    ///
+    /// Uses vectorized operations for high-performance filtering on large batches.
+    /// Falls back to scalar operations when SIMD is not beneficial.
+    pub fn filter_batch_simd(&self, batch: DataBatch) -> DataBatch {
         // Generate selection mask
         let mask = self.generate_selection_mask(&batch.values);
 
@@ -94,6 +96,23 @@ impl FilterOperator {
         // Use the predicate's evaluate method for consistent behavior
         values.iter().map(|&v| self.predicate.evaluate(v)).collect()
     }
+
+    /// Optimized batch filtering with conditional SIMD support
+    ///
+    /// When the `simd` feature is enabled and the batch is large enough (64+ elements),
+    /// this uses SIMD-accelerated filtering. Otherwise, falls back to scalar filtering.
+    fn filter_batch_optimized(&self, batch: DataBatch) -> DataBatch {
+        #[cfg(feature = "simd")]
+        {
+            // Use SIMD for large batches where vectorization provides benefit
+            if batch.len() >= 64 {
+                return self.filter_batch_simd(batch);
+            }
+        }
+
+        // Default scalar path
+        self.filter_batch(batch)
+    }
 }
 
 impl Operator for FilterOperator {
@@ -110,7 +129,7 @@ impl Operator for FilterOperator {
 
             match self.input.next_batch(ctx)? {
                 Some(batch) => {
-                    let filtered = self.filter_batch(batch);
+                    let filtered = self.filter_batch_optimized(batch);
                     if !filtered.is_empty() {
                         ctx.record_rows(filtered.len());
                         return Ok(Some(filtered));

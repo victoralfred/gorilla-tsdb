@@ -71,12 +71,10 @@ pub struct ActiveChunk {
     /// This allows should_seal() to check duration without acquiring read lock
     max_timestamp: AtomicI64,
 
-    /// Chunk creation time (reserved for future metrics)
-    #[allow(dead_code)]
+    /// Chunk creation time for lifecycle metrics
     created_at: Instant,
 
-    /// Initial capacity hint (reserved for future pre-allocation)
-    #[allow(dead_code)]
+    /// Initial capacity hint for point limit enforcement
     capacity: usize,
 
     /// Sealing configuration
@@ -622,6 +620,56 @@ impl ActiveChunk {
     /// Get series ID
     pub fn series_id(&self) -> SeriesId {
         self.series_id
+    }
+
+    /// Get chunk age since creation
+    ///
+    /// Returns the duration since this chunk was created.
+    /// Used for lifecycle metrics and monitoring chunk lifetimes.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
+    /// use std::time::Duration;
+    ///
+    /// let chunk = ActiveChunk::new(42, 1000, SealConfig::default());
+    /// // Immediately after creation, age is very small
+    /// assert!(chunk.age() < Duration::from_secs(1));
+    /// ```
+    pub fn age(&self) -> std::time::Duration {
+        self.created_at.elapsed()
+    }
+
+    /// Get capacity utilization ratio
+    ///
+    /// Returns a value between 0.0 and 1.0+ indicating how full this chunk is
+    /// relative to its initial capacity hint. Values > 1.0 indicate the chunk
+    /// has exceeded its initial capacity (which is allowed).
+    ///
+    /// Returns 0.0 if capacity is 0 (to avoid division by zero).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
+    ///
+    /// let chunk = ActiveChunk::new(42, 100, SealConfig::default());
+    /// assert_eq!(chunk.utilization(), 0.0);
+    /// ```
+    pub fn utilization(&self) -> f64 {
+        if self.capacity == 0 {
+            return 0.0;
+        }
+        self.point_count() as f64 / self.capacity as f64
+    }
+
+    /// Get the initial capacity hint
+    ///
+    /// Returns the capacity value provided at chunk creation.
+    /// This is a hint used for pre-allocation and utilization metrics.
+    pub fn capacity(&self) -> usize {
+        self.capacity
     }
 }
 

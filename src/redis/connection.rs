@@ -662,8 +662,7 @@ impl RedisPool {
 /// A pooled connection that returns to the pool when dropped
 pub struct PooledConnection<'a> {
     conn: MultiplexedConnection,
-    /// Reference to parent pool (for future use in connection recycling)
-    #[allow(dead_code)]
+    /// Reference to parent pool for connection recycling and metrics
     pool: &'a RedisPool,
     _permit: tokio::sync::OwnedSemaphorePermit,
 }
@@ -672,6 +671,14 @@ impl<'a> PooledConnection<'a> {
     /// Get a reference to the underlying connection
     pub fn connection(&mut self) -> &mut MultiplexedConnection {
         &mut self.conn
+    }
+
+    /// Get a reference to the parent pool
+    ///
+    /// Used for accessing pool metrics or health status from
+    /// within connection handling code.
+    pub fn pool(&self) -> &RedisPool {
+        self.pool
     }
 }
 

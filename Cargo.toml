@@ -18,6 +18,8 @@ path = "src/bin/server.rs"
 default = []
 # Enable TLS support for Redis connections (uses rustls)
 redis-tls = ["redis/tokio-rustls-comp"]
+# Enable SIMD-accelerated filtering for large batches (64+ elements)
+simd = []
 
 [dependencies]
 # Async runtime

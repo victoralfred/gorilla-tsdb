@@ -428,8 +428,7 @@ pub struct Chunk {
     state: ChunkState,
     /// Data storage (in-memory or on-disk reference)
     data: ChunkData,
-    /// Capacity for active chunks (reserved for future pre-allocation)
-    #[allow(dead_code)]
+    /// Capacity for active chunks used to enforce point limits
     capacity: usize,
     /// P2.2: Cached header to avoid re-reading from disk on decompress
     cached_header: Option<ChunkHeader>,

@@ -517,6 +517,9 @@ impl TimeSeriesDB {
     }
 
     /// Get database statistics
+    ///
+    /// Returns comprehensive statistics including storage, compression,
+    /// and index cache metrics for monitoring and debugging.
     pub fn stats(&self) -> DatabaseStats {
         let storage_stats = self.storage.stats();
         let index_stats = self.index.stats();
@@ -529,6 +532,10 @@ impl TimeSeriesDB {
             write_ops: storage_stats.write_ops,
             read_ops: storage_stats.read_ops,
             compression_ratio: compression_stats.average_ratio,
+            // Index cache statistics for cache-first lookup optimization
+            index_cache_hits: index_stats.cache_hits,
+            index_cache_misses: index_stats.cache_misses,
+            index_queries_served: index_stats.queries_served,
         }
     }
 
@@ -596,6 +603,12 @@ pub struct DatabaseStats {
     pub read_ops: u64,
     /// Average compression ratio
     pub compression_ratio: f64,
+    /// Index cache hits (for cache-first lookup optimization)
+    pub index_cache_hits: u64,
+    /// Index cache misses
+    pub index_cache_misses: u64,
+    /// Total index queries served
+    pub index_queries_served: u64,
 }
 
 #[cfg(test)]
