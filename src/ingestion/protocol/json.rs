@@ -67,8 +67,7 @@ pub struct JsonParser {
     /// Whether to allow missing timestamps (default: true)
     allow_missing_timestamp: bool,
     /// Whether to allow missing tags (default: true)
-    /// Reserved for future use when tag validation is added
-    #[allow(dead_code)]
+    /// When false, points must have at least one tag defined
     allow_missing_tags: bool,
     /// Default measurement name if not specified
     default_measurement: Option<String>,
@@ -93,6 +92,15 @@ impl JsonParser {
         self
     }
 
+    /// Create a parser that requires tags
+    ///
+    /// When enabled, points without tags (or with empty tags) will be rejected.
+    /// This is useful for enforcing proper metric labeling in production.
+    pub fn require_tags(mut self) -> Self {
+        self.allow_missing_tags = false;
+        self
+    }
+
     /// Set a default measurement name for points without one
     pub fn with_default_measurement(mut self, measurement: impl Into<String>) -> Self {
         self.default_measurement = Some(measurement.into());
@@ -103,6 +111,16 @@ impl JsonParser {
     pub fn with_max_array_size(mut self, max_size: usize) -> Self {
         self.max_array_size = max_size;
         self
+    }
+
+    /// Validate that tags are present if required
+    fn validate_tags(&self, tags: &HashMap<Cow<'_, str>, Cow<'_, str>>) -> Result<(), ParseError> {
+        if !self.allow_missing_tags && tags.is_empty() {
+            return Err(ParseError::new(ParseErrorKind::InvalidSyntax {
+                message: "tags are required but none were provided".to_string(),
+            }));
+        }
+        Ok(())
     }
 
     /// Parse a JSON value into a ParsedPoint
@@ -143,6 +161,9 @@ impl JsonParser {
             }
             None => HashMap::new(),
         };
+
+        // Validate tags are present if required
+        self.validate_tags(&tags)?;
 
         // Parse fields (required) with size limit check
         let fields: HashMap<Cow<'a, str>, FieldValue> = match &json.fields {

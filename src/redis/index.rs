@@ -97,7 +97,6 @@ struct LocalCache {
 /// Cached series metadata with TTL
 struct CachedSeriesMeta {
     /// The cached series metadata
-    #[allow(dead_code)]
     metadata: SeriesMetadata,
     /// Timestamp when cached (in milliseconds)
     cached_at: i64,
@@ -121,9 +120,10 @@ impl LocalCache {
     }
 
     /// Get cached series metadata if not expired
-    /// Reserved for future cache-first lookup optimization
-    #[allow(dead_code)]
-    fn get_series_meta(&self, series_id: SeriesId) -> Option<&SeriesMetadata> {
+    ///
+    /// Returns cached metadata if available and not expired, enabling
+    /// cache-first lookup optimization to reduce Redis round trips.
+    pub fn get_series_meta(&self, series_id: SeriesId) -> Option<&SeriesMetadata> {
         self.series_meta.get(&series_id).and_then(|cached| {
             if cached.is_expired() {
                 None
@@ -167,8 +167,11 @@ impl LocalCache {
 }
 
 /// Chunk metadata stored in Redis
+///
+/// Contains all metadata about a chunk needed for index operations
+/// including location, time range, and compression details.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct RedisChunkMetadata {
+pub struct RedisChunkMetadata {
     series_id: String,
     path: String,
     start_time: i64,
@@ -293,10 +296,9 @@ impl RedisTimeIndex {
 
     /// Get chunk metadata from Redis
     ///
-    /// Note: This method is kept for individual chunk lookups. For batch operations,
+    /// Retrieves metadata for a single chunk. For batch operations,
     /// prefer using pipelines in query_chunks to avoid N+1 query pattern.
-    #[allow(dead_code)]
-    async fn get_chunk_metadata(
+    pub async fn get_chunk_metadata(
         &self,
         chunk_id: &ChunkId,
     ) -> Result<Option<RedisChunkMetadata>, IndexError> {
@@ -344,17 +346,45 @@ impl RedisTimeIndex {
         pattern: &str,
     ) -> Result<Vec<SeriesId>, IndexError> {
         let mut matching = Vec::new();
+        let mut cache_misses: Vec<(usize, String)> = Vec::new();
 
-        // Batch fetch metadata using pipeline to avoid N+1
+        // First pass: check local cache for metadata
+        {
+            let cache = self.local_cache.read().await;
+            for (idx, series_id_str) in series_ids.iter().enumerate() {
+                if let Ok(series_id) = series_id_str.parse::<SeriesId>() {
+                    if let Some(meta) = cache.get_series_meta(series_id) {
+                        // Cache hit - check pattern match
+                        self.cache_hits.fetch_add(1, Ordering::Relaxed);
+                        if meta.tags.values().any(|v| v.contains(pattern)) {
+                            matching.push(series_id);
+                        }
+                    } else {
+                        // Cache miss - need to fetch from Redis
+                        cache_misses.push((idx, series_id_str.clone()));
+                    }
+                }
+            }
+        }
+
+        // If all cache hits, return early
+        if cache_misses.is_empty() {
+            return Ok(matching);
+        }
+
+        self.cache_misses
+            .fetch_add(cache_misses.len() as u64, Ordering::Relaxed);
+
+        // Batch fetch metadata for cache misses using pipeline
         const BATCH_SIZE: usize = 100;
 
-        for batch in series_ids.chunks(BATCH_SIZE) {
-            let batch_owned: Vec<String> = batch.to_vec();
+        for batch in cache_misses.chunks(BATCH_SIZE) {
+            let batch_ids: Vec<String> = batch.iter().map(|(_, id)| id.clone()).collect();
 
             let metadata_results: Vec<Option<String>> = self
                 .pool
                 .execute(|mut conn| {
-                    let batch = batch_owned.clone();
+                    let batch = batch_ids.clone();
                     async move {
                         let mut pipe = redis::pipe();
                         for series_id_str in &batch {
@@ -373,7 +403,7 @@ impl RedisTimeIndex {
                 })?;
 
             // Process results
-            for (series_id_str, tags_opt) in batch.iter().zip(metadata_results) {
+            for ((_, series_id_str), tags_opt) in batch.iter().zip(metadata_results) {
                 if let Some(tags_json) = tags_opt {
                     let tags: HashMap<String, String> =
                         serde_json::from_str(&tags_json).unwrap_or_default();

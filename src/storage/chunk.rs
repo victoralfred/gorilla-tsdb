@@ -328,8 +328,13 @@ pub struct ChunkMetadata {
     /// Number of points in chunk
     pub point_count: u32,
 
-    /// Size on disk
+    /// Size on disk (compressed)
     pub size_bytes: u64,
+
+    /// Original uncompressed size in bytes
+    /// Used to calculate compression ratio
+    #[serde(default)]
+    pub uncompressed_size: u64,
 
     /// Compression type used
     pub compression: CompressionType,
@@ -428,8 +433,7 @@ pub struct Chunk {
     state: ChunkState,
     /// Data storage (in-memory or on-disk reference)
     data: ChunkData,
-    /// Capacity for active chunks (reserved for future pre-allocation)
-    #[allow(dead_code)]
+    /// Capacity for active chunks used to enforce point limits
     capacity: usize,
     /// P2.2: Cached header to avoid re-reading from disk on decompress
     cached_header: Option<ChunkHeader>,
@@ -570,6 +574,7 @@ impl Chunk {
                 end_timestamp: i64::MIN,   // Will be updated to max on first append
                 point_count: 0,
                 size_bytes: 0,
+                uncompressed_size: 0, // Will be updated when sealed
                 compression: CompressionType::None,
                 created_at: now,
                 last_accessed: now,
@@ -638,6 +643,7 @@ impl Chunk {
                 end_timestamp,
                 point_count,
                 size_bytes: 0,
+                uncompressed_size: 0, // Will be updated when sealed
                 compression: CompressionType::None,
                 created_at: now,
                 last_accessed: now,
@@ -1049,6 +1055,7 @@ impl Chunk {
                 end_timestamp: header.end_timestamp,
                 point_count: header.point_count,
                 size_bytes: (64 + header.compressed_size) as u64,
+                uncompressed_size: header.uncompressed_size as u64,
                 compression: header.compression_type,
                 created_at: now,
                 last_accessed: now,
@@ -1266,6 +1273,7 @@ mod tests {
             end_timestamp: 2000,
             point_count: 100,
             size_bytes: 1024,
+            uncompressed_size: 0,
             compression: CompressionType::Gorilla,
             created_at: 0,
             last_accessed: 0,

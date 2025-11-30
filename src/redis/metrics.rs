@@ -140,9 +140,10 @@ impl LatencyHistogram {
         self.sum.load(Ordering::Relaxed) as f64 / count as f64
     }
 
-    /// Reset the histogram (reserved for periodic cleanup)
-    #[allow(dead_code)]
-    fn reset(&self) {
+    /// Reset the histogram to initial state
+    ///
+    /// Used for periodic metrics cleanup or when starting a new monitoring window.
+    pub fn reset(&self) {
         for bucket in &self.buckets {
             bucket.store(0, Ordering::Relaxed);
         }
@@ -491,6 +492,18 @@ impl RedisMetrics {
 
         let mut ops = self.operations.write();
         ops.clear();
+    }
+
+    /// Reset only latency histograms for rolling window metrics
+    ///
+    /// This resets the latency distribution buckets while keeping operation
+    /// counts intact. Useful for periodic histogram snapshots in monitoring
+    /// systems that want fresh histogram data for each scrape interval.
+    pub fn reset_histograms(&self) {
+        let ops = self.operations.read();
+        for metrics in ops.values() {
+            metrics.latency.reset();
+        }
     }
 }
 

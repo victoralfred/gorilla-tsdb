@@ -77,15 +77,18 @@ use axum::{
 };
 use gorilla_tsdb::{
     compression::gorilla::GorillaCompressor,
+    config::ApplicationConfig,
     engine::{DatabaseConfig, DatabaseStats, InMemoryTimeIndex, TimeSeriesDB, TimeSeriesDBBuilder},
     query::{
-        parse_promql, parse_sql, AggregationFunction as QueryAggFunction, Query as ParsedQuery,
+        parse_promql, parse_sql,
+        subscription::{SubscriptionConfig, SubscriptionManager},
+        AggregationFunction as QueryAggFunction, Query as ParsedQuery,
     },
     storage::LocalDiskEngine,
     types::{DataPoint, SeriesId, TagFilter, TimeRange},
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 use tokio::signal;
 use tracing::{error, info, warn};
 
@@ -93,63 +96,62 @@ use tracing::{error, info, warn};
 // Server Configuration
 // =============================================================================
 
-/// Server configuration loaded from TOML or environment
-#[derive(Debug, Clone, Deserialize)]
+/// Server runtime configuration derived from ApplicationConfig
+///
+/// This is a simplified view of the configuration used by the HTTP server.
+/// It's extracted from the full ApplicationConfig to provide a convenient
+/// interface for server-specific settings.
+#[derive(Debug, Clone)]
 pub struct ServerConfig {
     /// HTTP server address
-    #[serde(default = "default_listen_addr")]
     pub listen_addr: String,
 
     /// Data directory path
-    #[serde(default = "default_data_dir")]
     pub data_dir: PathBuf,
 
     /// Maximum chunk size in bytes
-    #[serde(default = "default_max_chunk_size")]
     pub max_chunk_size: usize,
 
     /// Data retention in days (None = forever)
-    #[serde(default)]
     pub retention_days: Option<u32>,
 
     /// Enable Prometheus metrics endpoint
-    #[serde(default = "default_true")]
     pub enable_metrics: bool,
 
     /// Maximum points per write request
-    #[serde(default = "default_max_write_points")]
     pub max_write_points: usize,
-}
 
-fn default_listen_addr() -> String {
-    "0.0.0.0:8080".to_string()
-}
+    /// Subscription cleanup interval in seconds (0 = disabled)
+    pub subscription_cleanup_interval_secs: u64,
 
-fn default_data_dir() -> PathBuf {
-    PathBuf::from("./data/tsdb")
-}
+    /// Maximum age of stale subscriptions in seconds before cleanup
+    pub subscription_max_age_secs: u64,
 
-fn default_max_chunk_size() -> usize {
-    1024 * 1024 // 1MB
-}
-
-fn default_true() -> bool {
-    true
-}
-
-fn default_max_write_points() -> usize {
-    100_000
+    /// Metrics histogram reset interval in seconds (0 = disabled)
+    pub metrics_reset_interval_secs: u64,
 }
 
 impl Default for ServerConfig {
     fn default() -> Self {
+        Self::from(ApplicationConfig::default())
+    }
+}
+
+impl From<ApplicationConfig> for ServerConfig {
+    /// Convert from ApplicationConfig to ServerConfig
+    ///
+    /// Extracts relevant settings from the centralized configuration.
+    fn from(app_config: ApplicationConfig) -> Self {
         Self {
-            listen_addr: default_listen_addr(),
-            data_dir: default_data_dir(),
-            max_chunk_size: default_max_chunk_size(),
-            retention_days: None,
-            enable_metrics: true,
-            max_write_points: default_max_write_points(),
+            listen_addr: app_config.server.listen_addr,
+            data_dir: app_config.storage.data_dir,
+            max_chunk_size: app_config.storage.max_chunk_size_bytes,
+            retention_days: None, // ApplicationConfig doesn't have retention yet
+            enable_metrics: app_config.monitoring.prometheus_enabled,
+            max_write_points: app_config.ingestion.max_batch_size,
+            subscription_cleanup_interval_secs: 300, // 5 minutes default
+            subscription_max_age_secs: 3600,         // 1 hour default
+            metrics_reset_interval_secs: 0,          // Disabled by default
         }
     }
 }
@@ -164,6 +166,8 @@ struct AppState {
     /// Storage engine reference for series metadata persistence
     storage: Arc<LocalDiskEngine>,
     config: ServerConfig,
+    /// Subscription manager for live query subscriptions
+    subscriptions: Arc<SubscriptionManager>,
 }
 
 // =============================================================================
@@ -328,10 +332,24 @@ struct StatsResponse {
     write_ops: u64,
     read_ops: u64,
     compression_ratio: f64,
+    /// Index cache statistics for monitoring cache effectiveness
+    index_cache_hits: u64,
+    index_cache_misses: u64,
+    index_queries_served: u64,
+    /// Cache hit rate as a percentage (0.0 to 100.0)
+    index_cache_hit_rate: f64,
 }
 
 impl From<DatabaseStats> for StatsResponse {
     fn from(stats: DatabaseStats) -> Self {
+        // Calculate cache hit rate
+        let total_cache_ops = stats.index_cache_hits + stats.index_cache_misses;
+        let cache_hit_rate = if total_cache_ops > 0 {
+            (stats.index_cache_hits as f64 / total_cache_ops as f64) * 100.0
+        } else {
+            0.0
+        };
+
         Self {
             total_chunks: stats.total_chunks,
             total_bytes: stats.total_bytes,
@@ -339,6 +357,10 @@ impl From<DatabaseStats> for StatsResponse {
             write_ops: stats.write_ops,
             read_ops: stats.read_ops,
             compression_ratio: stats.compression_ratio,
+            index_cache_hits: stats.index_cache_hits,
+            index_cache_misses: stats.index_cache_misses,
+            index_queries_served: stats.index_queries_served,
+            index_cache_hit_rate: cache_hit_rate,
         }
     }
 }
@@ -1377,46 +1399,195 @@ async fn get_stats(State(state): State<Arc<AppState>>) -> Json<StatsResponse> {
     Json(state.db.stats().into())
 }
 
-/// Prometheus metrics endpoint (placeholder)
-async fn metrics() -> impl IntoResponse {
-    // TODO: Implement proper Prometheus metrics export
-    "# HELP tsdb_up Indicates if TSDB is up\n# TYPE tsdb_up gauge\ntsdb_up 1\n"
+/// Prometheus metrics endpoint
+///
+/// Exports metrics in Prometheus text format for scraping by Prometheus server.
+/// Includes storage, compression, index cache, subscription, and operational metrics.
+async fn metrics(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let stats = state.db.stats();
+    let sub_stats = state.subscriptions.stats();
+
+    // Calculate cache hit rate
+    let total_cache_ops = stats.index_cache_hits + stats.index_cache_misses;
+    let cache_hit_rate = if total_cache_ops > 0 {
+        stats.index_cache_hits as f64 / total_cache_ops as f64
+    } else {
+        0.0
+    };
+
+    format!(
+        "# HELP tsdb_up Indicates if TSDB is up\n\
+         # TYPE tsdb_up gauge\n\
+         tsdb_up 1\n\
+         \n\
+         # HELP tsdb_chunks_total Total number of chunks stored\n\
+         # TYPE tsdb_chunks_total gauge\n\
+         tsdb_chunks_total {}\n\
+         \n\
+         # HELP tsdb_bytes_total Total bytes stored\n\
+         # TYPE tsdb_bytes_total gauge\n\
+         tsdb_bytes_total {}\n\
+         \n\
+         # HELP tsdb_series_total Total number of time series\n\
+         # TYPE tsdb_series_total gauge\n\
+         tsdb_series_total {}\n\
+         \n\
+         # HELP tsdb_write_ops_total Total write operations\n\
+         # TYPE tsdb_write_ops_total counter\n\
+         tsdb_write_ops_total {}\n\
+         \n\
+         # HELP tsdb_read_ops_total Total read operations\n\
+         # TYPE tsdb_read_ops_total counter\n\
+         tsdb_read_ops_total {}\n\
+         \n\
+         # HELP tsdb_compression_ratio Average compression ratio\n\
+         # TYPE tsdb_compression_ratio gauge\n\
+         tsdb_compression_ratio {:.4}\n\
+         \n\
+         # HELP tsdb_index_cache_hits_total Index cache hits\n\
+         # TYPE tsdb_index_cache_hits_total counter\n\
+         tsdb_index_cache_hits_total {}\n\
+         \n\
+         # HELP tsdb_index_cache_misses_total Index cache misses\n\
+         # TYPE tsdb_index_cache_misses_total counter\n\
+         tsdb_index_cache_misses_total {}\n\
+         \n\
+         # HELP tsdb_index_queries_total Total index queries served\n\
+         # TYPE tsdb_index_queries_total counter\n\
+         tsdb_index_queries_total {}\n\
+         \n\
+         # HELP tsdb_index_cache_hit_rate Index cache hit rate (0.0 to 1.0)\n\
+         # TYPE tsdb_index_cache_hit_rate gauge\n\
+         tsdb_index_cache_hit_rate {:.4}\n\
+         \n\
+         # HELP tsdb_subscriptions_created_total Total subscriptions created\n\
+         # TYPE tsdb_subscriptions_created_total counter\n\
+         tsdb_subscriptions_created_total {}\n\
+         \n\
+         # HELP tsdb_subscription_updates_sent_total Total updates sent to subscribers\n\
+         # TYPE tsdb_subscription_updates_sent_total counter\n\
+         tsdb_subscription_updates_sent_total {}\n\
+         \n\
+         # HELP tsdb_subscription_updates_dropped_total Updates dropped (no subscribers)\n\
+         # TYPE tsdb_subscription_updates_dropped_total counter\n\
+         tsdb_subscription_updates_dropped_total {}\n\
+         \n\
+         # HELP tsdb_active_subscriptions Active series with subscriptions\n\
+         # TYPE tsdb_active_subscriptions gauge\n\
+         tsdb_active_subscriptions {}\n",
+        stats.total_chunks,
+        stats.total_bytes,
+        stats.total_series,
+        stats.write_ops,
+        stats.read_ops,
+        stats.compression_ratio,
+        stats.index_cache_hits,
+        stats.index_cache_misses,
+        stats.index_queries_served,
+        cache_hit_rate,
+        sub_stats.subscriptions_created,
+        sub_stats.updates_sent,
+        sub_stats.updates_dropped,
+        sub_stats.active_series,
+    )
 }
 
 // =============================================================================
 // Server Initialization
 // =============================================================================
 
-/// Load configuration from file or environment
-fn load_config() -> ServerConfig {
-    // Check environment variable first
-    if let Ok(path) = std::env::var("TSDB_CONFIG") {
-        match std::fs::read_to_string(&path) {
-            Ok(content) => match toml::from_str(&content) {
-                Ok(config) => {
-                    info!(path = %path, "Loaded configuration from file");
-                    return config;
-                }
-                Err(e) => {
-                    warn!(path = %path, error = %e, "Failed to parse config file, using defaults");
-                }
-            },
+/// Load configuration from file or environment, returning both ServerConfig and ApplicationConfig
+///
+/// This variant is used at startup before logging is initialized, so we can use
+/// the log_level from the config to set up tracing.
+///
+/// Configuration is loaded in the following priority order:
+/// 1. GORILLA_CONFIG or TSDB_CONFIG environment variable (path to TOML file)
+/// 2. application.toml in current directory
+/// 3. tsdb.toml in current directory (legacy compatibility)
+/// 4. Built-in defaults
+///
+/// Environment variables (GORILLA_*) are applied as overrides after file loading.
+fn load_config_with_app() -> (ServerConfig, ApplicationConfig) {
+    // Check environment variables for config file path
+    let config_path = std::env::var("GORILLA_CONFIG")
+        .or_else(|_| std::env::var("TSDB_CONFIG"))
+        .ok();
+
+    if let Some(path) = config_path {
+        match ApplicationConfig::load(&path) {
+            Ok(config) => {
+                // Note: Can't log here - tracing not initialized yet
+                eprintln!("[config] Loaded configuration from: {}", path);
+                let server_config = ServerConfig::from(config.clone());
+                return (server_config, config);
+            }
             Err(e) => {
-                warn!(path = %path, error = %e, "Failed to read config file, using defaults");
+                eprintln!(
+                    "[config] Failed to load config from {}: {}. Trying defaults.",
+                    path, e
+                );
             }
         }
     }
 
-    // Check default config file
-    if let Ok(content) = std::fs::read_to_string("tsdb.toml") {
-        if let Ok(config) = toml::from_str(&content) {
-            info!("Loaded configuration from tsdb.toml");
-            return config;
+    // Try application.toml (new default)
+    let app_toml_path = std::path::Path::new("application.toml");
+    if app_toml_path.exists() {
+        match ApplicationConfig::load("application.toml") {
+            Ok(config) => {
+                eprintln!("[config] Loaded configuration from application.toml");
+                let server_config = ServerConfig::from(config.clone());
+                return (server_config, config);
+            }
+            Err(e) => {
+                eprintln!(
+                    "[config] Failed to parse application.toml: {}. Trying tsdb.toml.",
+                    e
+                );
+            }
+        }
+    } else {
+        eprintln!(
+            "[config] application.toml not found at: {:?}",
+            app_toml_path
+                .canonicalize()
+                .unwrap_or_else(|_| app_toml_path.to_path_buf())
+        );
+    }
+
+    // Try tsdb.toml (legacy compatibility)
+    let tsdb_toml_path = std::path::Path::new("tsdb.toml");
+    if tsdb_toml_path.exists() {
+        match ApplicationConfig::load("tsdb.toml") {
+            Ok(config) => {
+                eprintln!("[config] Loaded configuration from tsdb.toml (legacy)");
+                let server_config = ServerConfig::from(config.clone());
+                return (server_config, config);
+            }
+            Err(e) => {
+                eprintln!("[config] Failed to parse tsdb.toml: {}. Using defaults.", e);
+            }
         }
     }
 
-    info!("Using default configuration");
-    ServerConfig::default()
+    // Use defaults with environment variable overrides
+    eprintln!("[config] Using default configuration");
+    let mut app_config = ApplicationConfig::default();
+    if let Err(e) = app_config.apply_env_overrides() {
+        eprintln!("[config] Failed to apply environment overrides: {}", e);
+    }
+    let server_config = ServerConfig::from(app_config.clone());
+    (server_config, app_config)
+}
+
+/// Load configuration from file or environment
+///
+/// Simplified version that only returns ServerConfig (for backward compatibility).
+#[allow(dead_code)]
+fn load_config() -> ServerConfig {
+    let (server_config, _) = load_config_with_app();
+    server_config
 }
 
 // =============================================================================
@@ -1669,20 +1840,22 @@ async fn shutdown_signal() {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize tracing
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("gorilla_tsdb=info".parse()?)
-                .add_directive("server=info".parse()?),
-        )
-        .init();
+    // Load configuration FIRST (before tracing, so we can use log_level from config)
+    let (config, app_config) = load_config_with_app();
+
+    // Initialize tracing with log level from config
+    let log_level = app_config.server.log_level.clone();
+    eprintln!("[config] Log level from config: {}", log_level);
+
+    let filter = tracing_subscriber::EnvFilter::from_default_env()
+        .add_directive(format!("gorilla_tsdb={}", log_level).parse()?)
+        .add_directive(format!("server={}", log_level).parse()?);
+
+    tracing_subscriber::fmt().with_env_filter(filter).init();
 
     info!("Gorilla TSDB Server starting...");
     info!("Version: {}", env!("CARGO_PKG_VERSION"));
-
-    // Load configuration
-    let config = load_config();
+    info!("Log level: {}", log_level);
     info!("Data directory: {:?}", config.data_dir);
     info!("Listen address: {}", config.listen_addr);
 
@@ -1691,12 +1864,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (db, storage) = init_database(&config).await?;
     info!("Database initialized successfully");
 
+    // Create subscription manager
+    let subscriptions = Arc::new(SubscriptionManager::new(SubscriptionConfig::default()));
+
     // Create application state
     let state = Arc::new(AppState {
         db,
         storage,
         config: config.clone(),
+        subscriptions: subscriptions.clone(),
     });
+
+    // Spawn subscription cleanup task if enabled
+    if config.subscription_cleanup_interval_secs > 0 {
+        let cleanup_subscriptions = subscriptions.clone();
+        let cleanup_interval = Duration::from_secs(config.subscription_cleanup_interval_secs);
+        let max_age = Duration::from_secs(config.subscription_max_age_secs);
+
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(cleanup_interval).await;
+                let removed = cleanup_subscriptions.cleanup_stale_with_age(max_age);
+                if removed > 0 {
+                    info!("Cleaned up {} stale subscriptions", removed);
+                }
+            }
+        });
+        info!(
+            "Subscription cleanup task started (interval: {}s, max_age: {}s)",
+            config.subscription_cleanup_interval_secs, config.subscription_max_age_secs
+        );
+    }
 
     // Build router
     let app = build_router(state);

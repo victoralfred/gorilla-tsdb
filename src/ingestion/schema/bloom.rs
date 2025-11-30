@@ -212,8 +212,7 @@ impl BloomFilter {
 pub struct ScalableBloomFilter {
     /// Chain of bloom filters (newest last)
     filters: RwLock<Vec<BloomFilter>>,
-    /// Initial capacity (stored for potential reset/clear operations)
-    #[allow(dead_code)]
+    /// Initial capacity (stored for reset operations)
     initial_capacity: usize,
     /// Target false positive rate
     fp_rate: f64,
@@ -358,6 +357,9 @@ impl ScalableBloomFilter {
     }
 
     /// Clear all filters
+    ///
+    /// Clears the first filter and removes any additional filters.
+    /// This is efficient but preserves the first filter's memory allocation.
     pub fn clear(&self) {
         let mut filters = self.filters.write().unwrap();
 
@@ -366,6 +368,27 @@ impl ScalableBloomFilter {
             first.clear();
         }
         filters.truncate(1);
+    }
+
+    /// Reset the filter to its initial state
+    ///
+    /// Creates a fresh filter with the original initial capacity,
+    /// completely discarding the existing filter chain.
+    /// Use this when you want to fully reclaim memory.
+    pub fn reset(&self) {
+        let mut filters = self.filters.write().unwrap();
+
+        // Create a fresh filter with original configuration
+        let fresh_filter = BloomFilter::new(self.initial_capacity, self.fp_rate);
+
+        // Replace entire chain with fresh filter
+        filters.clear();
+        filters.push(fresh_filter);
+    }
+
+    /// Get the initial capacity this filter was created with
+    pub fn initial_capacity(&self) -> usize {
+        self.initial_capacity
     }
 
     /// Get statistics
@@ -536,5 +559,58 @@ mod tests {
         // For 10000 elements at 0.01 FP: ~12KB
         assert!(usage > 1000, "Memory usage too low: {}", usage);
         assert!(usage < 100000, "Memory usage too high: {}", usage);
+    }
+
+    #[test]
+    fn test_scalable_bloom_filter_reset() {
+        let filter = ScalableBloomFilter::with_config(10, 0.01, 2, 0.9, 5);
+
+        // Record initial memory usage
+        let initial_memory = filter.memory_usage();
+        let initial_capacity = filter.initial_capacity();
+
+        // Trigger growth by inserting many elements
+        for i in 0..100 {
+            filter.insert(&i);
+        }
+
+        assert!(filter.filter_count() > 1, "Filter should have grown");
+        assert!(
+            filter.memory_usage() > initial_memory,
+            "Memory should have increased"
+        );
+
+        // Reset to original state
+        filter.reset();
+
+        // Verify filter is back to initial state
+        assert_eq!(
+            filter.filter_count(),
+            1,
+            "Should have single filter after reset"
+        );
+        assert_eq!(filter.count(), 0, "Count should be zero after reset");
+        assert_eq!(
+            filter.initial_capacity(),
+            initial_capacity,
+            "Initial capacity preserved"
+        );
+
+        // Elements should no longer be found
+        assert!(!filter.contains(&0), "Should not find elements after reset");
+        assert!(
+            !filter.contains(&50),
+            "Should not find elements after reset"
+        );
+
+        // Should be able to insert again
+        assert!(filter.insert(&"new_element"));
+        assert!(filter.contains(&"new_element"));
+    }
+
+    #[test]
+    fn test_scalable_bloom_filter_initial_capacity() {
+        let filter = ScalableBloomFilter::new(5000, 0.01);
+        assert_eq!(filter.initial_capacity(), 5000);
     }
 }

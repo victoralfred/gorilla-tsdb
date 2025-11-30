@@ -42,8 +42,7 @@ pub struct StorageScanOperator {
     /// Storage engine reference for chunk discovery
     storage: Arc<LocalDiskEngine>,
 
-    /// Chunk reader for decompression (reserved for async reads)
-    #[allow(dead_code)]
+    /// Chunk reader for decompression and async read operations
     reader: ChunkReader,
 
     /// Series selector for filtering
@@ -189,9 +188,9 @@ impl StorageScanOperator {
     /// Load points from the current chunk (async version)
     ///
     /// Uses ChunkReader to decompress the chunk and load points into buffer.
-    /// Reserved for future async execution path.
-    #[allow(dead_code)]
-    async fn load_current_chunk(&mut self) -> Result<bool, QueryError> {
+    /// This async path is preferred when called from async context for
+    /// better concurrency with other async operations.
+    pub async fn load_current_chunk(&mut self) -> Result<bool, QueryError> {
         if self.current_chunk_idx >= self.chunks.len() {
             return Ok(false);
         }
@@ -443,6 +442,7 @@ mod tests {
             end_timestamp: 150,
             point_count: 100,
             size_bytes: 1024,
+            uncompressed_size: 0,
             compression: crate::storage::chunk::CompressionType::Gorilla,
             created_at: 0,
             last_accessed: 0,
@@ -458,6 +458,7 @@ mod tests {
             end_timestamp: 50,
             point_count: 50,
             size_bytes: 512,
+            uncompressed_size: 0,
             compression: crate::storage::chunk::CompressionType::Gorilla,
             created_at: 0,
             last_accessed: 0,
@@ -473,6 +474,7 @@ mod tests {
             end_timestamp: 400,
             point_count: 100,
             size_bytes: 1024,
+            uncompressed_size: 0,
             compression: crate::storage::chunk::CompressionType::Gorilla,
             created_at: 0,
             last_accessed: 0,
@@ -498,6 +500,7 @@ mod tests {
             end_timestamp: 2000000,
             point_count: 1000,
             size_bytes: 10240,
+            uncompressed_size: 0,
             compression: crate::storage::chunk::CompressionType::Gorilla,
             created_at: 0,
             last_accessed: 0,
@@ -525,6 +528,7 @@ mod tests {
                 end_timestamp: 100,
                 point_count: 100,
                 size_bytes: 1024,
+                uncompressed_size: 0,
                 compression: crate::storage::chunk::CompressionType::Gorilla,
                 created_at: 0,
                 last_accessed: 0,
@@ -537,6 +541,7 @@ mod tests {
                 end_timestamp: 200,
                 point_count: 200,
                 size_bytes: 2048,
+                uncompressed_size: 0,
                 compression: crate::storage::chunk::CompressionType::Gorilla,
                 created_at: 0,
                 last_accessed: 0,

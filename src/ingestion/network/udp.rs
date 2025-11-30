@@ -97,6 +97,47 @@ pub struct UdpStatsSnapshot {
     pub parse_errors: u64,
 }
 
+/// Configuration for UDP listener operation mode
+#[derive(Debug, Clone)]
+pub struct UdpConfig {
+    /// Enable batched receive mode for higher throughput
+    pub batch_mode: bool,
+    /// Number of receives to attempt per batch iteration (when batch_mode is true)
+    pub batch_size: usize,
+}
+
+impl Default for UdpConfig {
+    fn default() -> Self {
+        Self {
+            batch_mode: false,
+            batch_size: 100,
+        }
+    }
+}
+
+impl UdpConfig {
+    /// Create a config for single-receive mode (lower latency)
+    pub fn single() -> Self {
+        Self {
+            batch_mode: false,
+            batch_size: 1,
+        }
+    }
+
+    /// Create a config for batched mode (higher throughput)
+    pub fn batched(batch_size: usize) -> Self {
+        Self {
+            batch_mode: true,
+            batch_size,
+        }
+    }
+
+    /// Check if batch mode is enabled
+    pub fn is_batched(&self) -> bool {
+        self.batch_mode
+    }
+}
+
 impl UdpListener {
     /// Bind a new UDP listener to the specified address
     ///
@@ -175,6 +216,35 @@ impl UdpListener {
     /// Get reference to statistics
     pub fn stats(&self) -> &UdpStats {
         &self.stats
+    }
+
+    /// Run the UDP receive loop with configuration
+    ///
+    /// Unified entry point that selects between single-receive and batched
+    /// modes based on the provided configuration.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - UDP configuration specifying batch mode settings
+    /// * `rate_limiter` - Rate limiter for traffic control
+    /// * `shutdown_rx` - Broadcast receiver for shutdown signal
+    ///
+    /// # Mode Selection
+    ///
+    /// - Single mode (default): Lower latency, processes one packet at a time
+    /// - Batch mode: Higher throughput, attempts to process multiple packets per iteration
+    pub async fn run_with_config(
+        self,
+        config: UdpConfig,
+        rate_limiter: Arc<RateLimiter>,
+        shutdown_rx: broadcast::Receiver<()>,
+    ) -> Result<(), NetworkError> {
+        if config.is_batched() {
+            self.run_batched(rate_limiter, shutdown_rx, config.batch_size)
+                .await
+        } else {
+            self.run(rate_limiter, shutdown_rx).await
+        }
     }
 
     /// Run the UDP receive loop
@@ -308,7 +378,6 @@ impl UdpListener {
     /// * `rate_limiter` - Rate limiter for traffic control
     /// * `shutdown_rx` - Broadcast receiver for shutdown signal
     /// * `batch_size` - Number of receives to attempt per iteration
-    #[allow(dead_code)]
     pub async fn run_batched(
         self,
         rate_limiter: Arc<RateLimiter>,
@@ -483,5 +552,92 @@ mod tests {
         assert_eq!(snapshot.bytes_received, 5000);
         assert_eq!(snapshot.rate_limited, 5);
         assert_eq!(snapshot.parse_errors, 0);
+    }
+
+    #[test]
+    fn test_udp_config_single() {
+        let config = UdpConfig::single();
+        assert!(!config.is_batched());
+        assert_eq!(config.batch_size, 1);
+    }
+
+    #[test]
+    fn test_udp_config_batched() {
+        let config = UdpConfig::batched(50);
+        assert!(config.is_batched());
+        assert_eq!(config.batch_size, 50);
+    }
+
+    #[test]
+    fn test_udp_config_default() {
+        let config = UdpConfig::default();
+        assert!(!config.is_batched());
+        assert_eq!(config.batch_size, 100);
+    }
+
+    #[tokio::test]
+    async fn test_udp_run_with_config_single() {
+        let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let listener = UdpListener::bind(addr, 65536).await.unwrap();
+        let bound_addr = listener.local_addr();
+
+        let rate_limiter = Arc::new(RateLimiter::new(Default::default()));
+        let (shutdown_tx, shutdown_rx) = broadcast::channel(1);
+
+        // Use single mode config
+        let config = UdpConfig::single();
+
+        let listener_handle = tokio::spawn(async move {
+            listener
+                .run_with_config(config, rate_limiter, shutdown_rx)
+                .await
+        });
+
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+        // Send test data
+        let client = TokioUdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let data = b"test,host=server1 value=42.0\n";
+        client.send_to(data, bound_addr).await.unwrap();
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let _ = shutdown_tx.send(());
+        let result = listener_handle.await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_udp_run_with_config_batched() {
+        let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let listener = UdpListener::bind(addr, 65536).await.unwrap();
+        let bound_addr = listener.local_addr();
+
+        let rate_limiter = Arc::new(RateLimiter::new(Default::default()));
+        let (shutdown_tx, shutdown_rx) = broadcast::channel(1);
+
+        // Use batched mode config
+        let config = UdpConfig::batched(10);
+
+        let listener_handle = tokio::spawn(async move {
+            listener
+                .run_with_config(config, rate_limiter, shutdown_rx)
+                .await
+        });
+
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+        // Send multiple test packets
+        let client = TokioUdpSocket::bind("127.0.0.1:0").await.unwrap();
+        for i in 0..5 {
+            let data = format!("test,host=server{} value={}\n", i, i as f64);
+            client.send_to(data.as_bytes(), bound_addr).await.unwrap();
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let _ = shutdown_tx.send(());
+        let result = listener_handle.await;
+        assert!(result.is_ok());
     }
 }
