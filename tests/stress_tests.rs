@@ -5,6 +5,9 @@
 //!
 //! Usage:
 //!   cargo test --release --test stress_tests -- --ignored --test-threads=1
+
+// Allow manual modulo checks since is_multiple_of is unstable on stable Rust (Docker builds)
+#![allow(clippy::manual_is_multiple_of)]
 use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
 use gorilla_tsdb::storage::chunk::Chunk;
 use gorilla_tsdb::types::DataPoint;

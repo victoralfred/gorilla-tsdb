@@ -2,6 +2,9 @@
 //!
 //! This binary provides a complete HTTP server for the Gorilla time-series database.
 //! It exposes REST endpoints for data ingestion, querying, and administration.
+
+// Allow manual modulo checks since is_multiple_of is unstable on stable Rust (Docker builds)
+#![allow(clippy::manual_is_multiple_of)]
 //!
 //! # Endpoints
 //!
