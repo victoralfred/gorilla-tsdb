@@ -231,26 +231,32 @@ impl SeriesBuffer {
 
         // Slow path: out-of-order insertion
         self.out_of_order_count += 1;
+
+        // PERF-005: Use binary search when data is sorted for O(log n) lookup
+        // Check was_sorted before marking as unsorted
+        let was_sorted = self.is_sorted;
         self.is_sorted = false;
 
         // Check if this timestamp already exists (for overwrite tracking)
-        // Use binary search if we know the data is sorted
-        let overwrite = if self.points.len() > 1 {
-            // Linear scan for now; will be sorted on drain
-            self.points.iter().any(|(ts, _)| *ts == timestamp)
+        let existing_idx = if self.points.len() > 1 {
+            if was_sorted {
+                // Binary search for O(log n) lookup when data was sorted
+                self.points
+                    .binary_search_by_key(&timestamp, |(ts, _)| *ts)
+                    .ok()
+            } else {
+                // Linear scan only when data is already unsorted
+                self.points.iter().position(|(ts, _)| *ts == timestamp)
+            }
         } else {
-            false
+            None
         };
 
-        if overwrite {
-            // Update existing point
-            for (ts, val) in &mut self.points {
-                if *ts == timestamp {
-                    *val = value;
-                    break;
-                }
-            }
+        if let Some(idx) = existing_idx {
+            // Update existing point directly by index
+            self.points[idx].1 = value;
             self.overwrites += 1;
+            true
         } else {
             // Append out-of-order point (will be sorted on drain)
             self.points.push((timestamp, value));
@@ -258,9 +264,8 @@ impl SeriesBuffer {
             if timestamp > self.last_timestamp.unwrap_or(i64::MIN) {
                 self.last_timestamp = Some(timestamp);
             }
+            false
         }
-
-        overwrite
     }
 
     /// Add a point to the buffer (legacy API, no validation)

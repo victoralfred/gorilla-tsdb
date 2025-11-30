@@ -45,13 +45,41 @@ impl Default for WriterConfig {
 }
 
 impl WriterConfig {
+    /// Maximum allowed number of workers
+    /// Beyond this, coordination overhead outweighs parallelism benefits
+    const MAX_WORKERS: usize = 64;
+
+    /// Maximum allowed concurrent writes
+    /// Prevents resource exhaustion from too many in-flight operations
+    const MAX_CONCURRENT_WRITES: usize = 1000;
+
     /// Validate the configuration
+    ///
+    /// # Validation Rules
+    ///
+    /// - `num_workers` must be between 1 and 64
+    /// - `max_concurrent_writes` must be between 1 and 1000
     pub fn validate(&self) -> Result<(), String> {
+        // VAL-003: Add upper bounds validation
         if self.num_workers == 0 {
             return Err("num_workers must be > 0".to_string());
         }
+        if self.num_workers > Self::MAX_WORKERS {
+            return Err(format!(
+                "num_workers {} exceeds maximum allowed {}",
+                self.num_workers,
+                Self::MAX_WORKERS
+            ));
+        }
         if self.max_concurrent_writes == 0 {
             return Err("max_concurrent_writes must be > 0".to_string());
+        }
+        if self.max_concurrent_writes > Self::MAX_CONCURRENT_WRITES {
+            return Err(format!(
+                "max_concurrent_writes {} exceeds maximum allowed {}",
+                self.max_concurrent_writes,
+                Self::MAX_CONCURRENT_WRITES
+            ));
         }
         Ok(())
     }

@@ -446,6 +446,91 @@ pub struct SealConfig {
     pub max_size_bytes: usize,
 }
 
+impl SealConfig {
+    /// Minimum allowed points before sealing (must have at least 1 point)
+    const MIN_POINTS: usize = 1;
+    /// Maximum allowed points before sealing (10 million)
+    const MAX_POINTS: usize = 10_000_000;
+    /// Minimum duration (1 second)
+    const MIN_DURATION_MS: i64 = 1_000;
+    /// Maximum duration (7 days)
+    const MAX_DURATION_MS: i64 = 7 * 24 * 60 * 60 * 1000;
+    /// Minimum size (1KB)
+    const MIN_SIZE_BYTES: usize = 1_024;
+    /// Maximum size (1GB)
+    const MAX_SIZE_BYTES: usize = 1_024 * 1_024 * 1_024;
+
+    /// Validate the seal configuration
+    ///
+    /// # Validation Rules
+    ///
+    /// - `max_points` must be between 1 and 10,000,000
+    /// - `max_duration_ms` must be between 1,000 (1 second) and 604,800,000 (7 days)
+    /// - `max_size_bytes` must be between 1,024 (1KB) and 1,073,741,824 (1GB)
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gorilla_tsdb::storage::chunk::SealConfig;
+    ///
+    /// let config = SealConfig::default();
+    /// assert!(config.validate().is_ok());
+    ///
+    /// let invalid = SealConfig {
+    ///     max_points: 0,
+    ///     max_duration_ms: 1000,
+    ///     max_size_bytes: 1024,
+    /// };
+    /// assert!(invalid.validate().is_err());
+    /// ```
+    pub fn validate(&self) -> Result<(), String> {
+        // VAL-004: Add validation for SealConfig
+        if self.max_points < Self::MIN_POINTS {
+            return Err(format!(
+                "max_points {} is below minimum {}",
+                self.max_points,
+                Self::MIN_POINTS
+            ));
+        }
+        if self.max_points > Self::MAX_POINTS {
+            return Err(format!(
+                "max_points {} exceeds maximum {}",
+                self.max_points,
+                Self::MAX_POINTS
+            ));
+        }
+        if self.max_duration_ms < Self::MIN_DURATION_MS {
+            return Err(format!(
+                "max_duration_ms {} is below minimum {}",
+                self.max_duration_ms,
+                Self::MIN_DURATION_MS
+            ));
+        }
+        if self.max_duration_ms > Self::MAX_DURATION_MS {
+            return Err(format!(
+                "max_duration_ms {} exceeds maximum {}",
+                self.max_duration_ms,
+                Self::MAX_DURATION_MS
+            ));
+        }
+        if self.max_size_bytes < Self::MIN_SIZE_BYTES {
+            return Err(format!(
+                "max_size_bytes {} is below minimum {}",
+                self.max_size_bytes,
+                Self::MIN_SIZE_BYTES
+            ));
+        }
+        if self.max_size_bytes > Self::MAX_SIZE_BYTES {
+            return Err(format!(
+                "max_size_bytes {} exceeds maximum {}",
+                self.max_size_bytes,
+                Self::MAX_SIZE_BYTES
+            ));
+        }
+        Ok(())
+    }
+}
+
 impl Default for SealConfig {
     fn default() -> Self {
         Self {

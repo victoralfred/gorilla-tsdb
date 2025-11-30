@@ -768,7 +768,7 @@ impl Compressor for GorillaCompressor {
             return Ok(Vec::new());
         }
 
-        // Verify checksum if enabled
+        // Verify checksum if enabled (do this before spawn_blocking for fast failure)
         if self.config.enable_checksum && block.checksum != 0 {
             let calculated = Self::calculate_checksum(&block.data);
             if calculated != block.checksum {
@@ -779,52 +779,67 @@ impl Compressor for GorillaCompressor {
             }
         }
 
-        let mut reader = BitReader::new(&block.data);
+        // Clone data needed for spawn_blocking
+        let data = block.data.clone();
+        let series_id = block.metadata.series_id;
+        let stats = Arc::clone(&self.stats);
 
-        // Read point count
-        let count = reader.read_bits(32)? as usize;
+        // PERF-006: Run CPU-intensive decompression on blocking thread pool
+        // This prevents decompression from blocking the async runtime
+        let points = tokio::task::spawn_blocking(move || {
+            let mut reader = BitReader::new(&data);
 
-        // Maximum reasonable points per block (10 million)
-        const MAX_POINTS_PER_BLOCK: usize = 10_000_000;
+            // Read point count
+            let count = reader.read_bits(32)? as usize;
 
-        if count > MAX_POINTS_PER_BLOCK {
-            return Err(CompressionError::InvalidData(format!(
-                "Point count {} exceeds maximum allowed {}",
-                count, MAX_POINTS_PER_BLOCK
-            )));
-        }
+            // Maximum reasonable points per block (10 million)
+            const MAX_POINTS_PER_BLOCK: usize = 10_000_000;
 
-        if count == 0 {
-            return Ok(Vec::new());
-        }
+            if count > MAX_POINTS_PER_BLOCK {
+                return Err(CompressionError::InvalidData(format!(
+                    "Point count {} exceeds maximum allowed {}",
+                    count, MAX_POINTS_PER_BLOCK
+                )));
+            }
 
-        // Decompress timestamps and values
-        let timestamps = Self::decompress_timestamps(count, &mut reader)?;
-        let values = Self::decompress_values(count, &mut reader)?;
+            if count == 0 {
+                return Ok(Vec::new());
+            }
 
-        if timestamps.len() != values.len() {
-            return Err(CompressionError::CorruptedData(
-                "Timestamp and value count mismatch".to_string(),
-            ));
-        }
+            // Decompress timestamps and values
+            let timestamps = Self::decompress_timestamps(count, &mut reader)?;
+            let values = Self::decompress_values(count, &mut reader)?;
 
-        // Reconstruct data points
-        let points: Vec<DataPoint> = timestamps
-            .into_iter()
-            .zip(values)
-            .map(|(timestamp, value)| DataPoint {
-                series_id: block.metadata.series_id,
-                timestamp,
-                value,
-            })
-            .collect();
+            if timestamps.len() != values.len() {
+                return Err(CompressionError::CorruptedData(
+                    "Timestamp and value count mismatch".to_string(),
+                ));
+            }
 
-        // Update stats
-        {
-            let mut stats = self.stats.lock();
-            stats.total_decompressed += 1;
-            stats.decompression_time_ms += start.elapsed().as_millis() as u64;
-        }
+            // Reconstruct data points
+            let points: Vec<DataPoint> = timestamps
+                .into_iter()
+                .zip(values)
+                .map(|(timestamp, value)| DataPoint {
+                    series_id,
+                    timestamp,
+                    value,
+                })
+                .collect();
+
+            // Update stats
+            {
+                let mut s = stats.lock();
+                s.total_decompressed += 1;
+                s.decompression_time_ms += start.elapsed().as_millis() as u64;
+            }
+
+            Ok(points)
+        })
+        .await
+        .map_err(|e| {
+            CompressionError::InvalidData(format!("Decompression task panicked: {}", e))
+        })??;
 
         Ok(points)
     }
