@@ -435,8 +435,9 @@ struct SqlPromqlRequest {
     #[serde(alias = "q")]
     query: String,
 
-    /// Output format: "json" (default), "csv", or "table"
+    /// Output format: "json" (default) - reserved for future CSV support
     #[serde(default = "default_format")]
+    #[allow(dead_code)]
     format: String,
 
     /// Force a specific query language: "sql", "promql", or "auto" (default)
@@ -452,36 +453,30 @@ fn default_language() -> String {
     "auto".to_string()
 }
 
-/// Response from SQL/PromQL query execution
+/// Response from SQL/PromQL query execution (Datadog-compatible format)
 #[derive(Debug, Serialize)]
 struct SqlPromqlResponse {
-    success: bool,
-    /// Detected query language
+    /// Response status ("ok" or "error")
+    status: String,
+    /// Series data (Datadog-compatible format)
+    /// Each entry has: metric, scope, tag_set, pointlist, length
     #[serde(skip_serializing_if = "Option::is_none")]
-    language: Option<String>,
+    series: Option<Vec<SeriesData>>,
+    /// Start of time range (milliseconds)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    from_date: Option<i64>,
+    /// End of time range (milliseconds)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    to_date: Option<i64>,
     /// Query type (select, aggregate, downsample, etc.)
     #[serde(skip_serializing_if = "Option::is_none")]
     query_type: Option<String>,
-    /// Number of rows returned (total points across all series)
+    /// Detected query language
     #[serde(skip_serializing_if = "Option::is_none")]
-    row_count: Option<usize>,
-    /// Series data grouped by tags (for SELECT queries)
-    /// Each entry represents a distinct series with its identifying tags and data points.
-    /// Ideal for rendering multi-line time-series charts.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    series: Option<Vec<SeriesData>>,
-    /// Legacy flat data array (deprecated, use `series` instead)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    data: Option<serde_json::Value>,
-    /// CSV output (only if format=csv)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    csv: Option<String>,
+    language: Option<String>,
     /// Aggregation result (for aggregate queries)
     #[serde(skip_serializing_if = "Option::is_none")]
     aggregation: Option<SqlAggregationResult>,
-    /// Warnings from query execution
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    warnings: Vec<String>,
     /// Error message if failed
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
@@ -498,24 +493,22 @@ struct SqlAggregationResult {
     groups: Option<Vec<GroupedAggregationResult>>,
 }
 
-/// Series data for chart visualization
+/// Series data for chart visualization (Datadog-compatible format)
 ///
-/// Groups data points by series with identifying tags.
-/// This structure is ideal for rendering multi-line time-series charts
-/// where each series represents a distinct entity (e.g., different hosts).
+/// Each series represents a distinct time-series identified by its metric and tags.
+/// The pointlist format matches Datadog's API for easy frontend integration.
 #[derive(Debug, Serialize, Clone)]
 struct SeriesData {
-    /// Tag key-value pairs identifying this series (e.g., {"host": "server1", "region": "us-east"})
-    tags: HashMap<String, String>,
-    /// Data points for this series, ordered by timestamp
-    points: Vec<TimeValuePair>,
-}
-
-/// Simple timestamp-value pair for chart data
-#[derive(Debug, Serialize, Clone)]
-struct TimeValuePair {
-    timestamp: i64,
-    value: f64,
+    /// Metric name (e.g., "system.cpu.user")
+    metric: String,
+    /// Human-readable scope string (e.g., "host:server1,region:us-east")
+    scope: String,
+    /// Tag set as array of "key:value" strings (e.g., ["host:server1", "region:us-east"])
+    tag_set: Vec<String>,
+    /// Data points as [timestamp, value] pairs (Datadog pointlist format)
+    pointlist: Vec<[f64; 2]>,
+    /// Number of points in the series
+    length: usize,
 }
 
 // =============================================================================
@@ -677,10 +670,16 @@ mod query_router {
             .await
             .unwrap_or_default();
 
-        // Query each series separately and build series-grouped data
-        // This preserves series identity for multi-line chart rendering
+        // Get metric name from selector
+        let metric_name = q
+            .selector
+            .measurement
+            .clone()
+            .unwrap_or_else(|| "unknown".to_string());
+
+        // Query each series separately and build Datadog-compatible series data
         let mut series_data: Vec<SeriesData> = Vec::new();
-        let mut all_points: Vec<DataPoint> = Vec::new(); // For backward compatibility
+        let mut all_points: Vec<DataPoint> = Vec::new();
 
         for series_id in &series_ids {
             match db.query(*series_id, q.time_range).await {
@@ -688,29 +687,38 @@ mod query_router {
                     // Sort points by timestamp within this series
                     points.sort_by_key(|p| p.timestamp);
 
-                    // Get tags for this series (empty HashMap if not found)
+                    // Get tags for this series
                     let tags = series_tags.get(series_id).cloned().unwrap_or_default();
 
-                    // Convert to TimeValuePair for chart-friendly format
-                    let time_value_points: Vec<TimeValuePair> = points
+                    // Build tag_set as ["key:value", ...] format
+                    let mut tag_set: Vec<String> =
+                        tags.iter().map(|(k, v)| format!("{}:{}", k, v)).collect();
+                    tag_set.sort(); // Consistent ordering
+
+                    // Build scope string (e.g., "host:server1,region:us-east")
+                    let scope = tag_set.join(",");
+
+                    // Convert to pointlist format [[timestamp, value], ...]
+                    let pointlist: Vec<[f64; 2]> = points
                         .iter()
-                        .map(|p| TimeValuePair {
-                            timestamp: p.timestamp,
-                            value: p.value,
-                        })
+                        .map(|p| [p.timestamp as f64, p.value])
                         .collect();
 
-                    // Add to series data (for chart visualization)
+                    let length = pointlist.len();
+
+                    // Add to series data (Datadog-compatible format)
                     series_data.push(SeriesData {
-                        tags,
-                        points: time_value_points,
+                        metric: metric_name.clone(),
+                        scope,
+                        tag_set,
+                        pointlist,
+                        length,
                     });
 
                     // Also collect all points for backward compatibility
                     all_points.extend(points);
                 }
                 Err(e) => {
-                    // Log but continue with other series
                     tracing::warn!("Error querying series {}: {}", series_id, e);
                 }
             }
@@ -719,20 +727,13 @@ mod query_router {
         // Sort all_points by timestamp for backward-compatible flat list
         all_points.sort_by_key(|p| p.timestamp);
 
-        // Apply limit and offset to all_points (backward compatibility)
+        // Apply limit and offset
         let mut result_points = all_points;
         if let Some(offset) = q.offset {
             result_points = result_points.into_iter().skip(offset).collect();
         }
         if let Some(limit) = q.limit {
             result_points = result_points.into_iter().take(limit).collect();
-        }
-
-        // Apply limit to series_data as well (limit total points across series)
-        if q.limit.is_some() || q.offset.is_some() {
-            // For series data, apply limit/offset per-series proportionally
-            // or just pass all series and let client handle it
-            // For now, we'll keep all series but note the limit was applied to flat list
         }
 
         Ok((
@@ -1918,96 +1919,52 @@ async fn execute_sql_promql_query(
 
     // Execute query using the query router
     match query_router::execute_query(&state.db, &req.query, &req.language).await {
-        Ok((language, query_type, points, aggregation, grouped_results, series_data)) => {
-            // Calculate total point count across all series
-            let total_points = series_data
+        Ok((language, query_type, _points, aggregation, grouped_results, series_data)) => {
+            // Calculate time range from series data
+            let (from_date, to_date) = series_data
                 .as_ref()
-                .map(|s| s.iter().map(|sd| sd.points.len()).sum())
-                .unwrap_or(points.len());
-
-            // Format results based on requested format
-            let (data, csv_output) = match req.format.to_lowercase().as_str() {
-                "csv" => {
-                    // Generate CSV output grouped by series tags
-                    // Format: timestamp,value,tag1,tag2,...
-                    let mut csv = String::new();
-
-                    if let Some(ref series) = series_data {
-                        // Collect all unique tag keys across all series
-                        let mut all_tags: Vec<String> = series
-                            .iter()
-                            .flat_map(|s| s.tags.keys().cloned())
-                            .collect::<std::collections::HashSet<_>>()
-                            .into_iter()
-                            .collect();
-                        all_tags.sort(); // Consistent column order
-
-                        // Write header
-                        csv.push_str("timestamp,value");
-                        for tag in &all_tags {
-                            csv.push(',');
-                            csv.push_str(tag);
-                        }
-                        csv.push('\n');
-
-                        // Write data rows
-                        for s in series {
-                            for p in &s.points {
-                                csv.push_str(&format!("{},{}", p.timestamp, p.value));
-                                for tag in &all_tags {
-                                    csv.push(',');
-                                    if let Some(val) = s.tags.get(tag) {
-                                        csv.push_str(val);
-                                    }
-                                }
-                                csv.push('\n');
-                            }
-                        }
-                    } else {
-                        // Fallback to flat format
-                        csv.push_str("timestamp,value\n");
-                        for p in &points {
-                            csv.push_str(&format!("{},{}\n", p.timestamp, p.value));
+                .map(|series| {
+                    let mut min_ts = i64::MAX;
+                    let mut max_ts = i64::MIN;
+                    for s in series {
+                        for p in &s.pointlist {
+                            let ts = p[0] as i64;
+                            min_ts = min_ts.min(ts);
+                            max_ts = max_ts.max(ts);
                         }
                     }
-                    (None, Some(csv))
-                }
-                _ => {
-                    // JSON output (default) - flat array for backward compatibility
-                    // The main series data is in the `series` field
-                    let json_points: Vec<serde_json::Value> = points
-                        .iter()
-                        .map(|p| {
-                            serde_json::json!({
-                                "timestamp": p.timestamp,
-                                "value": p.value
-                            })
-                        })
-                        .collect();
-                    (Some(serde_json::json!(json_points)), None)
-                }
-            };
+                    if min_ts == i64::MAX {
+                        (None, None)
+                    } else {
+                        (Some(min_ts), Some(max_ts))
+                    }
+                })
+                .unwrap_or((None, None));
 
             // Build aggregation result, including grouped results if present
-            let agg_result = aggregation.map(|(func, value)| SqlAggregationResult {
-                function: func,
-                value,
-                point_count: total_points,
-                groups: grouped_results,
+            let agg_result = aggregation.map(|(func, value)| {
+                let total_points = series_data
+                    .as_ref()
+                    .map(|s| s.iter().map(|sd| sd.length).sum())
+                    .unwrap_or(0);
+                SqlAggregationResult {
+                    function: func,
+                    value,
+                    point_count: total_points,
+                    groups: grouped_results,
+                }
             });
 
             (
                 StatusCode::OK,
                 Json(SqlPromqlResponse {
-                    success: true,
-                    language: Some(language.to_string()),
-                    query_type: Some(query_type),
-                    row_count: Some(total_points),
+                    status: "ok".to_string(),
                     series: series_data,
-                    data,
-                    csv: csv_output,
+                    from_date,
+                    to_date,
+                    query_type: Some(query_type),
+                    language: Some(language.to_string()),
                     aggregation: agg_result,
-                    warnings: vec![],
                     error: None,
                 }),
             )
@@ -2017,15 +1974,13 @@ async fn execute_sql_promql_query(
             (
                 StatusCode::BAD_REQUEST,
                 Json(SqlPromqlResponse {
-                    success: false,
-                    language: None,
-                    query_type: None,
-                    row_count: None,
+                    status: "error".to_string(),
                     series: None,
-                    data: None,
-                    csv: None,
+                    from_date: None,
+                    to_date: None,
+                    query_type: None,
+                    language: None,
                     aggregation: None,
-                    warnings: vec![],
                     error: Some(e),
                 }),
             )
