@@ -306,10 +306,10 @@ data_dir = "/home/voseghale/projects/db/source/data/tsdb"
 # ----------------------------------------------------------------------------
 [redis]
 # Enable Redis integration
-# enabled = false
+enabled = true
 
 # Redis connection URL
-# url = "redis://127.0.0.1:6379"
+url = "redis://127.0.0.1:6379"
 
 # Connection pool size
 # pool_size = 16

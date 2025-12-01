@@ -84,6 +84,7 @@ use gorilla_tsdb::{
         subscription::{SubscriptionConfig, SubscriptionManager},
         AggregationFunction as QueryAggFunction, Query as ParsedQuery,
     },
+    redis::{RedisConfig as RedisPoolConfig, RedisTimeIndex},
     storage::LocalDiskEngine,
     types::{DataPoint, SeriesId, TagFilter, TimeRange},
 };
@@ -1700,6 +1701,7 @@ async fn execute_sql_promql_query(
 /// can persist series metadata directly to the storage engine.
 async fn init_database(
     config: &ServerConfig,
+    app_config: &ApplicationConfig,
 ) -> Result<(TimeSeriesDB, Arc<LocalDiskEngine>), Box<dyn std::error::Error>> {
     // Create data directory
     std::fs::create_dir_all(&config.data_dir)?;
@@ -1730,16 +1732,20 @@ async fn init_database(
         );
     }
 
-    // Create in-memory index (production would use Redis)
-    let index = InMemoryTimeIndex::new();
-
     // Create compressor
     let compressor = GorillaCompressor::new();
+
+    // Determine Redis URL for config (if enabled)
+    let redis_url = if app_config.redis.enabled {
+        Some(app_config.redis.url.clone())
+    } else {
+        None
+    };
 
     // Build database config
     let db_config = DatabaseConfig {
         data_dir: config.data_dir.clone(),
-        redis_url: None,
+        redis_url: redis_url.clone(),
         max_chunk_size: config.max_chunk_size,
         retention_days: config.retention_days,
         custom_options: HashMap::new(),
@@ -1749,13 +1755,45 @@ async fn init_database(
     // Coerce Arc<LocalDiskEngine> to Arc<dyn StorageEngine + Send + Sync>
     let storage_dyn: Arc<dyn gorilla_tsdb::engine::traits::StorageEngine + Send + Sync> =
         storage.clone();
-    let db = TimeSeriesDBBuilder::new()
-        .with_config(db_config)
-        .with_compressor(compressor)
-        .with_storage_arc(storage_dyn)
-        .with_index(index)
-        .build()
-        .await?;
+
+    // Create index based on configuration - either Redis or in-memory
+    let db = if app_config.redis.enabled {
+        info!("Connecting to Redis at {}...", app_config.redis.url);
+
+        // Create Redis configuration for the pool
+        let redis_config = RedisPoolConfig {
+            url: app_config.redis.url.clone(),
+            pool_size: app_config.redis.pool_size as u32,
+            connection_timeout: Duration::from_secs(app_config.redis.connection_timeout_secs),
+            command_timeout: Duration::from_secs(app_config.redis.command_timeout_secs),
+            health_check_interval: Duration::from_secs(app_config.redis.health_check_interval_secs),
+            tls_enabled: app_config.redis.tls_enabled,
+            ..Default::default()
+        };
+
+        // Create Redis index
+        let redis_index = RedisTimeIndex::new(redis_config).await?;
+        info!("Connected to Redis successfully");
+
+        TimeSeriesDBBuilder::new()
+            .with_config(db_config)
+            .with_compressor(compressor)
+            .with_storage_arc(storage_dyn)
+            .with_index(redis_index)
+            .build()
+            .await?
+    } else {
+        info!("Using in-memory index (Redis disabled)");
+        let index = InMemoryTimeIndex::new();
+
+        TimeSeriesDBBuilder::new()
+            .with_config(db_config)
+            .with_compressor(compressor)
+            .with_storage_arc(storage_dyn)
+            .with_index(index)
+            .build()
+            .await?
+    };
 
     // Rebuild index from storage if there are existing series
     // This ensures data persisted on disk is queryable after server restart
@@ -1783,7 +1821,7 @@ async fn init_database(
         }
     }
     if metadata_count > 0 {
-        info!("Restored {} series to in-memory index", metadata_count);
+        info!("Restored {} series to index", metadata_count);
     }
 
     Ok((db, storage))
@@ -1861,7 +1899,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize database
     info!("Initializing database...");
-    let (db, storage) = init_database(&config).await?;
+    let (db, storage) = init_database(&config, &app_config).await?;
     info!("Database initialized successfully");
 
     // Create subscription manager
