@@ -296,19 +296,17 @@ struct AggregationResult {
     groups: Option<Vec<GroupedAggregationResult>>,
 }
 
-/// Result for a single group in a GROUP BY aggregation
+/// Result for a single group in a GROUP BY aggregation (Timeseries-compatible)
 #[derive(Debug, Serialize, Clone)]
 struct GroupedAggregationResult {
-    /// Tag key-value pairs that define this group
-    /// e.g., {"host": "server1", "region": "us-east"}
-    group_by: HashMap<String, String>,
+    /// Scope string (e.g., "host:server1,region:us-east")
+    scope: String,
+    /// Tag set as array of "key:value" strings
+    tag_set: Vec<String>,
     /// Aggregated value for this group
     value: f64,
     /// Number of points in this group
     point_count: usize,
-    /// Series IDs that contributed to this group
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    series_ids: Vec<SeriesId>,
 }
 
 /// Single point in query response
@@ -853,23 +851,24 @@ mod query_router {
                 let (_, value) =
                     compute_aggregation_from_ast(&q.aggregation.function, &group_points);
 
-                // Build group_by HashMap from key
-                let group_by_map: HashMap<String, String> = group_key.into_iter().collect();
+                // Build tag_set and scope from group key
+                let mut tag_set: Vec<String> = group_key
+                    .iter()
+                    .map(|(k, v)| format!("{}:{}", k, v))
+                    .collect();
+                tag_set.sort();
+                let scope = tag_set.join(",");
 
                 grouped_results.push(GroupedAggregationResult {
-                    group_by: group_by_map,
+                    scope,
+                    tag_set,
                     value,
                     point_count: group_points.len(),
-                    series_ids: group_series_ids,
                 });
             }
 
-            // Sort groups for consistent output
-            grouped_results.sort_by(|a, b| {
-                let a_keys: Vec<_> = a.group_by.iter().collect();
-                let b_keys: Vec<_> = b.group_by.iter().collect();
-                a_keys.cmp(&b_keys)
-            });
+            // Sort groups by scope for consistent output
+            grouped_results.sort_by(|a, b| a.scope.cmp(&b.scope));
 
             // Compute total aggregation across all groups
             let total_value = if grouped_results.is_empty() {
