@@ -541,13 +541,16 @@ mod query_router {
     /// Execute a query string against the database
     ///
     /// Auto-detects the query language and routes to appropriate parser.
-    /// Returns:
-    /// - QueryLanguage: Detected query language
-    /// - String: Query type (select, aggregate, etc.)
-    /// - Vec<DataPoint>: Raw data points (for backward compatibility)
-    /// - Option<(String, f64)>: Scalar aggregation result
-    /// - Option<Vec<GroupedAggregationResult>>: GROUP BY aggregation results
-    /// - Option<Vec<SeriesData>>: Series-grouped data for SELECT queries (for charts)
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing:
+    /// - `QueryLanguage`: Detected query language
+    /// - `String`: Query type (select, aggregate, etc.)
+    /// - `Vec<DataPoint>`: Raw data points (for backward compatibility)
+    /// - `Option<(String, f64)>`: Scalar aggregation result
+    /// - `Option<Vec<GroupedAggregationResult>>`: GROUP BY aggregation results
+    /// - `Option<Vec<SeriesData>>`: Series-grouped data for SELECT queries (for charts)
     pub async fn execute_query(
         db: &TimeSeriesDB,
         query_str: &str,

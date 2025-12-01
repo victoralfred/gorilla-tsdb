@@ -682,10 +682,11 @@ impl SeriesSelector {
     /// efficient than an empty `TagFilter::Exact` (avoids unnecessary SINTER call).
     ///
     /// # Example
-    /// ```
-    /// // cpu{host="server01", region=~"us-.*"}
-    /// // -> TagFilter::Exact({host: "server01"})
-    /// // Note: region filter requires post-filtering
+    ///
+    /// ```text
+    /// cpu{host="server01", region=~"us-.*"}
+    /// -> TagFilter::Exact({host: "server01"})
+    /// Note: region filter requires post-filtering
     /// ```
     pub fn to_tag_filter(&self) -> TagFilter {
         let mut filters = HashMap::new();
