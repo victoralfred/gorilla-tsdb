@@ -45,7 +45,7 @@ RUN cargo build --release --bin ${APP_NAME}
 # ============================================================
 # Stage 2: RUNTIME
 # ============================================================
-FROM debian:bookworm-slim
+FROM debian:13.2-slim
 # Define app name for clarity and re-use
 ENV APP_NAME=tsdb-server
 # 1. Install Runtime Dependencies
