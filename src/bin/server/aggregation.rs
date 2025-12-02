@@ -282,19 +282,16 @@ pub fn aggregate_bucket_values(values: &[f64], func: &QueryAggFunction) -> f64 {
                 sorted[mid]
             }
         }
-        // For rate/increase/delta, compute from first and last values
-        QueryAggFunction::Rate | QueryAggFunction::Increase | QueryAggFunction::Delta => {
+        // For rate/increase, use counter-aware calculation with reset detection
+        QueryAggFunction::Rate | QueryAggFunction::Increase => {
+            compute_bucket_increase_with_resets(values)
+        }
+        // Delta is simple difference (not counter-aware, allows negative)
+        QueryAggFunction::Delta => {
             if values.len() < 2 {
                 0.0
             } else {
-                let first = values.first().unwrap();
-                let last = values.last().unwrap();
-                match func {
-                    QueryAggFunction::Increase => (last - first).max(0.0),
-                    QueryAggFunction::Delta => last - first,
-                    QueryAggFunction::Rate => last - first,
-                    _ => f64::NAN,
-                }
+                values.last().unwrap() - values.first().unwrap()
             }
         }
         QueryAggFunction::Percentile(p) => {
@@ -533,30 +530,15 @@ pub fn compute_aggregation_from_ast(
                 values[mid]
             }
         }
-        // Time-based calculations
+        // Time-based calculations with counter reset detection
         QueryAggFunction::Rate => {
-            if points.len() < 2 {
-                return (func_name, 0.0);
-            }
-            let first = points.first().unwrap();
-            let last = points.last().unwrap();
-            let value_diff = last.value - first.value;
-            let time_diff = (last.timestamp - first.timestamp) as f64 / 1000.0;
-            if time_diff > 0.0 {
-                value_diff / time_diff
-            } else {
-                0.0
-            }
+            return compute_rate_with_resets(points, func_name);
         }
         QueryAggFunction::Increase => {
-            if points.len() < 2 {
-                return (func_name, 0.0);
-            }
-            let first = points.first().unwrap();
-            let last = points.last().unwrap();
-            (last.value - first.value).max(0.0)
+            return compute_increase_with_resets(points, func_name);
         }
         QueryAggFunction::Delta => {
+            // Delta is simple difference (not counter-aware, allows negative)
             if points.len() < 2 {
                 return (func_name, 0.0);
             }
@@ -580,6 +562,151 @@ pub fn compute_aggregation_from_ast(
     };
 
     (func_name, value)
+}
+
+// =============================================================================
+// Counter Reset Detection Functions
+// =============================================================================
+
+/// Compute rate with counter reset detection
+///
+/// Handles Prometheus-style counter semantics:
+/// - Counters only increase (monotonic)
+/// - When value decreases, a reset occurred (process restart)
+/// - After reset, we add current value to total increase
+///
+/// # Algorithm
+/// 1. Walk through all points in order
+/// 2. If value < previous, counter reset detected
+/// 3. On reset: add current value (counter started from 0)
+/// 4. Normal: add (current - previous)
+/// 5. Divide total increase by time span for rate
+///
+/// # Returns
+/// Tuple of (function_name, per-second rate of increase)
+fn compute_rate_with_resets(points: &[DataPoint], func_name: String) -> (String, f64) {
+    if points.len() < 2 {
+        return (func_name, 0.0);
+    }
+
+    // Sort by timestamp to ensure correct ordering
+    let mut sorted_points = points.to_vec();
+    sorted_points.sort_by_key(|p| p.timestamp);
+
+    let first_ts = sorted_points.first().unwrap().timestamp;
+    let last_ts = sorted_points.last().unwrap().timestamp;
+
+    // Time delta in seconds
+    let time_delta_secs = (last_ts - first_ts) as f64 / 1000.0;
+    if time_delta_secs <= 0.0 {
+        return (func_name, 0.0);
+    }
+
+    // Calculate total increase with reset handling
+    let mut total_increase = 0.0;
+    let mut prev_value = sorted_points[0].value;
+    let mut reset_count = 0;
+
+    for point in sorted_points.iter().skip(1) {
+        let current_value = point.value;
+
+        if current_value < prev_value {
+            // Counter reset detected
+            // The counter restarted from 0, so current_value is the increase since reset
+            total_increase += current_value;
+            reset_count += 1;
+
+            tracing::debug!(
+                prev = prev_value,
+                current = current_value,
+                "Counter reset detected in rate calculation"
+            );
+        } else {
+            // Normal increase
+            total_increase += current_value - prev_value;
+        }
+
+        prev_value = current_value;
+    }
+
+    if reset_count > 0 {
+        tracing::debug!(
+            reset_count = reset_count,
+            total_increase = total_increase,
+            time_delta_secs = time_delta_secs,
+            "Rate calculated with counter resets"
+        );
+    }
+
+    (func_name, total_increase / time_delta_secs)
+}
+
+/// Compute counter increase with reset detection
+///
+/// Similar to rate but returns absolute increase, not per-second rate.
+/// Handles counter resets the same way.
+///
+/// # Returns
+/// Tuple of (function_name, total increase accounting for resets)
+fn compute_increase_with_resets(points: &[DataPoint], func_name: String) -> (String, f64) {
+    if points.len() < 2 {
+        return (func_name, 0.0);
+    }
+
+    // Sort by timestamp to ensure correct ordering
+    let mut sorted_points = points.to_vec();
+    sorted_points.sort_by_key(|p| p.timestamp);
+
+    // Calculate total increase with reset handling
+    let mut total_increase = 0.0;
+    let mut prev_value = sorted_points[0].value;
+
+    for point in sorted_points.iter().skip(1) {
+        let current_value = point.value;
+
+        if current_value < prev_value {
+            // Counter reset - add current value (increase since reset from 0)
+            total_increase += current_value;
+
+            tracing::debug!(
+                prev = prev_value,
+                current = current_value,
+                "Counter reset detected in increase calculation"
+            );
+        } else {
+            total_increase += current_value - prev_value;
+        }
+
+        prev_value = current_value;
+    }
+
+    // Ensure non-negative (increase can't be negative)
+    (func_name, total_increase.max(0.0))
+}
+
+/// Compute increase within a bucket with reset detection
+///
+/// Handles counter resets within a single time bucket.
+/// Used by aggregate_bucket_values for Rate and Increase functions.
+fn compute_bucket_increase_with_resets(values: &[f64]) -> f64 {
+    if values.len() < 2 {
+        return 0.0;
+    }
+
+    let mut total_increase = 0.0;
+    let mut prev_value = values[0];
+
+    for &value in &values[1..] {
+        if value < prev_value {
+            // Counter reset within bucket - add current value
+            total_increase += value;
+        } else {
+            total_increase += value - prev_value;
+        }
+        prev_value = value;
+    }
+
+    total_increase.max(0.0)
 }
 
 /// Create TimeAggregationInfo for response
@@ -961,5 +1088,207 @@ mod tests {
         assert_eq!(info.interval_ms, 300_000);
         assert_eq!(info.bucket_count, 24);
         assert_eq!(info.target_points, Some(DEFAULT_TARGET_POINTS));
+    }
+
+    // =========================================================================
+    // Counter Reset Detection Tests
+    // =========================================================================
+
+    #[test]
+    fn test_rate_with_counter_reset() {
+        // Simulate counter that resets mid-way
+        // Counter: 100 -> 150 (+50) -> RESET to 10 -> 60 (+50)
+        let points = make_points(&[
+            (1000, 100.0), // Counter at 100
+            (2000, 150.0), // Counter at 150 (+50 increase)
+            (3000, 10.0),  // RESET! Counter restarted at 10
+            (4000, 60.0),  // Counter at 60 (+50 since reset)
+        ]);
+
+        let (_, rate) = compute_rate_with_resets(&points, "rate".to_string());
+
+        // Total increase: 50 (100->150) + 10 (reset, counter at 10) + 50 (10->60) = 110
+        // Time span: 3 seconds
+        // Rate: 110 / 3 = 36.67 per second
+        assert!(
+            (rate - 36.67).abs() < 0.1,
+            "Expected rate ~36.67, got {}",
+            rate
+        );
+    }
+
+    #[test]
+    fn test_rate_no_reset() {
+        // Normal counter with no resets
+        let points = make_points(&[(1000, 100.0), (2000, 200.0), (3000, 300.0)]);
+
+        let (_, rate) = compute_rate_with_resets(&points, "rate".to_string());
+
+        // Increase: 200 over 2 seconds = 100/s
+        assert!(
+            (rate - 100.0).abs() < 0.01,
+            "Expected rate 100.0, got {}",
+            rate
+        );
+    }
+
+    #[test]
+    fn test_rate_single_point() {
+        let points = make_points(&[(1000, 100.0)]);
+        let (_, rate) = compute_rate_with_resets(&points, "rate".to_string());
+        assert_eq!(rate, 0.0);
+    }
+
+    #[test]
+    fn test_rate_empty_points() {
+        let points: Vec<DataPoint> = vec![];
+        let (_, rate) = compute_rate_with_resets(&points, "rate".to_string());
+        assert_eq!(rate, 0.0);
+    }
+
+    #[test]
+    fn test_increase_with_counter_reset() {
+        // Simulate counter that resets
+        let points = make_points(&[
+            (1000, 50.0),  // Start at 50
+            (2000, 100.0), // +50
+            (3000, 20.0),  // RESET to 20
+            (4000, 70.0),  // +50
+        ]);
+
+        let (_, increase) = compute_increase_with_resets(&points, "increase".to_string());
+
+        // Total increase: 50 (50->100) + 20 (reset) + 50 (20->70) = 120
+        assert!(
+            (increase - 120.0).abs() < 0.01,
+            "Expected increase 120.0, got {}",
+            increase
+        );
+    }
+
+    #[test]
+    fn test_increase_with_multiple_resets() {
+        // Multiple resets
+        let points = make_points(&[
+            (1000, 50.0), // Start at 50
+            (2000, 5.0),  // Reset to 5
+            (3000, 10.0), // +5
+            (4000, 3.0),  // Reset to 3
+            (5000, 23.0), // +20
+        ]);
+
+        let (_, increase) = compute_increase_with_resets(&points, "increase".to_string());
+
+        // Total: 5 (after first reset) + 5 (5->10) + 3 (after second reset) + 20 (3->23) = 33
+        assert!(
+            (increase - 33.0).abs() < 0.01,
+            "Expected increase 33.0, got {}",
+            increase
+        );
+    }
+
+    #[test]
+    fn test_increase_no_reset() {
+        let points = make_points(&[(1000, 10.0), (2000, 30.0), (3000, 50.0)]);
+
+        let (_, increase) = compute_increase_with_resets(&points, "increase".to_string());
+
+        // Simple increase: 50 - 10 = 40
+        assert!(
+            (increase - 40.0).abs() < 0.01,
+            "Expected increase 40.0, got {}",
+            increase
+        );
+    }
+
+    #[test]
+    fn test_bucket_increase_with_reset() {
+        // Values within a bucket with reset
+        let values = vec![100.0, 150.0, 10.0, 60.0];
+
+        let increase = compute_bucket_increase_with_resets(&values);
+
+        // 50 (100->150) + 10 (reset) + 50 (10->60) = 110
+        assert!(
+            (increase - 110.0).abs() < 0.01,
+            "Expected bucket increase 110.0, got {}",
+            increase
+        );
+    }
+
+    #[test]
+    fn test_bucket_increase_no_reset() {
+        let values = vec![10.0, 20.0, 30.0];
+
+        let increase = compute_bucket_increase_with_resets(&values);
+
+        // 10 + 10 = 20
+        assert!(
+            (increase - 20.0).abs() < 0.01,
+            "Expected bucket increase 20.0, got {}",
+            increase
+        );
+    }
+
+    #[test]
+    fn test_bucket_increase_single_value() {
+        let values = vec![100.0];
+        let increase = compute_bucket_increase_with_resets(&values);
+        assert_eq!(increase, 0.0);
+    }
+
+    #[test]
+    fn test_bucket_increase_empty() {
+        let values: Vec<f64> = vec![];
+        let increase = compute_bucket_increase_with_resets(&values);
+        assert_eq!(increase, 0.0);
+    }
+
+    #[test]
+    fn test_delta_ignores_resets() {
+        // Delta should NOT handle resets - it's just last - first
+        let points = make_points(&[
+            (1000, 100.0),
+            (2000, 150.0),
+            (3000, 10.0), // This is a reset but delta doesn't care
+        ]);
+
+        let (_, delta) = compute_aggregation_from_ast(&QueryAggFunction::Delta, &points);
+
+        // Delta is simply: 10 - 100 = -90
+        assert!(
+            (delta - (-90.0)).abs() < 0.01,
+            "Expected delta -90.0, got {}",
+            delta
+        );
+    }
+
+    #[test]
+    fn test_aggregate_bucket_with_reset() {
+        // Test aggregate_bucket_values uses reset detection for Rate/Increase
+        let values = vec![100.0, 150.0, 10.0, 60.0];
+
+        let rate_result = aggregate_bucket_values(&values, &QueryAggFunction::Rate);
+        let increase_result = aggregate_bucket_values(&values, &QueryAggFunction::Increase);
+
+        // Both should detect the reset and compute increase as 110
+        assert!(
+            (rate_result - 110.0).abs() < 0.01,
+            "Expected rate bucket 110.0, got {}",
+            rate_result
+        );
+        assert!(
+            (increase_result - 110.0).abs() < 0.01,
+            "Expected increase bucket 110.0, got {}",
+            increase_result
+        );
+
+        // Delta should be simple difference: 60 - 100 = -40
+        let delta_result = aggregate_bucket_values(&values, &QueryAggFunction::Delta);
+        assert!(
+            (delta_result - (-40.0)).abs() < 0.01,
+            "Expected delta bucket -40.0, got {}",
+            delta_result
+        );
     }
 }
