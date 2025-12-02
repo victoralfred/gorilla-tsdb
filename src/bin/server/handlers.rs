@@ -26,8 +26,8 @@ use gorilla_tsdb::redis::InvalidationPublisher;
 use gorilla_tsdb::storage::LocalDiskEngine;
 use gorilla_tsdb::types::{DataPoint, SeriesId, TagFilter, TimeRange};
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use tracing::{error, info, warn};
 
 // =============================================================================
@@ -206,7 +206,6 @@ pub async fn metrics(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     );
     (StatusCode::OK, [("content-type", "text/plain")], metrics)
 }
-
 
 // =============================================================================
 // Write Handlers

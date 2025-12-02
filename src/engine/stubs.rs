@@ -1202,7 +1202,10 @@ mod tests {
         for (id, metric, tags) in series_data {
             let metadata = SeriesMetadata {
                 metric_name: metric.to_string(),
-                tags: tags.into_iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+                tags: tags
+                    .into_iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
                 created_at: 1000,
                 retention_days: None,
             };
@@ -1272,7 +1275,10 @@ mod tests {
         for (id, metric, tags) in series_data {
             let metadata = SeriesMetadata {
                 metric_name: metric.to_string(),
-                tags: tags.into_iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+                tags: tags
+                    .into_iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
                 created_at: 1000,
                 retention_days: None,
             };

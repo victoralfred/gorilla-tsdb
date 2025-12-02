@@ -50,8 +50,8 @@ use gorilla_tsdb::{
     config::ApplicationConfig,
     engine::{DatabaseConfig, TimeSeriesDBBuilder},
     query::{
-        CacheConfig as QueryCacheConfig, QueryCache,
         subscription::{SubscriptionConfig, SubscriptionManager},
+        CacheConfig as QueryCacheConfig, QueryCache,
     },
     redis::{
         setup_cache_invalidation, InvalidationPublisher, RedisConfig as RedisPoolConfig,

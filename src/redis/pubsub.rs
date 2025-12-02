@@ -530,7 +530,10 @@ pub async fn setup_cache_invalidation(
             match event {
                 InvalidationEvent::SeriesWrite { series_id, .. } => {
                     cache.invalidate_series(series_id);
-                    debug!(series_id = series_id, "Invalidated cache for series (via Pub/Sub)");
+                    debug!(
+                        series_id = series_id,
+                        "Invalidated cache for series (via Pub/Sub)"
+                    );
                 }
                 InvalidationEvent::ChunkSealed { series_id, .. } => {
                     // Could also invalidate chunk cache here if needed
