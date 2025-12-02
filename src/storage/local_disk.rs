@@ -16,7 +16,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
-use tracing::{info, warn};
+use tracing::{debug, warn};
 
 /// Persisted series metadata entry
 /// Contains all information needed to reconstruct the in-memory index on startup
@@ -165,7 +165,7 @@ impl LocalDiskEngine {
             }
         }
 
-        info!("Found {} series directories to load", series_to_load.len());
+        debug!("Found {} series directories to load", series_to_load.len());
 
         // Load chunks for each series (still without lock)
         let mut total_chunks_loaded = 0usize;
@@ -181,7 +181,7 @@ impl LocalDiskEngine {
             }
         }
 
-        info!(
+        debug!(
             "Loaded {} total chunks from {} series directories",
             total_chunks_loaded,
             series_to_load.len()
@@ -396,7 +396,7 @@ impl LocalDiskEngine {
             metadata.insert(entry.series_id, entry);
         }
 
-        info!(
+        debug!(
             series_count = metadata.len(),
             "Loaded series metadata from disk"
         );

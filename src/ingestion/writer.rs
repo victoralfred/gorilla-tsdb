@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc, Semaphore};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, warn};
 
 use super::buffer::WriteBatch;
 use super::metrics::IngestionMetrics;
@@ -325,7 +325,7 @@ impl ParallelWriter {
             }
         };
 
-        info!(
+        debug!(
             "ParallelWriter started with {} workers, {} max concurrent",
             self.config.num_workers,
             self.config.num_workers * self.config.max_concurrent_writes
@@ -377,7 +377,7 @@ impl ParallelWriter {
                 }
 
                 _ = shutdown.recv() => {
-                    info!("ParallelWriter shutting down");
+                    debug!("ParallelWriter shutting down");
                     break;
                 }
             }
@@ -388,7 +388,7 @@ impl ParallelWriter {
             warn!("Error during shutdown wait: {}", e);
         }
 
-        info!("ParallelWriter stopped");
+        debug!("ParallelWriter stopped");
         Ok(())
     }
 

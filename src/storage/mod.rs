@@ -39,8 +39,6 @@
 
 /// Thread-safe active chunk implementation with concurrent write support
 pub mod active_chunk;
-/// Multi-tier cache management system for time-series data
-pub mod cache;
 /// Core chunk storage with lifecycle management
 pub mod chunk;
 /// Background compression service for sealed chunks
@@ -57,10 +55,6 @@ pub mod reader;
 pub mod writer;
 
 pub use active_chunk::ActiveChunk;
-pub use cache::{
-    CacheConfig, CacheEntry, CacheKey, CacheManager, CacheShard, CacheStats, EntryMetadata,
-    LruList, MemoryTracker,
-};
 pub use chunk::*;
 pub use compressor::{CompressionConfig, CompressionService, CompressionStats};
 pub use directory::{DirectoryMaintenance, SeriesMetadata, WriteLock, WriteLockConfig};

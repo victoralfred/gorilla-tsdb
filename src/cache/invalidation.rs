@@ -28,7 +28,7 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use gorilla_tsdb::redis::pubsub::{InvalidationPublisher, InvalidationSubscriber};
+//! use gorilla_tsdb::cache::{InvalidationPublisher, InvalidationSubscriber};
 //!
 //! // Publisher (on write path)
 //! let publisher = InvalidationPublisher::new("redis://localhost:6379").await?;
@@ -55,7 +55,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, warn};
 
 // ============================================================================
 // Channel Names
@@ -413,7 +413,7 @@ impl InvalidationSubscriber {
             match self.connect_and_listen().await {
                 Ok(()) => {
                     // Normal shutdown
-                    info!("Invalidation subscriber shutting down");
+                    debug!("Invalidation subscriber shutting down");
                     break Ok(());
                 }
                 Err(e) => {
@@ -448,7 +448,7 @@ impl InvalidationSubscriber {
             debug!("Subscribed to {}", channels::INVALIDATE_METADATA);
         }
 
-        info!("Invalidation subscriber connected and listening");
+        debug!("Invalidation subscriber connected and listening");
 
         // Message processing loop
         let mut stream = pubsub.on_message();
@@ -489,7 +489,7 @@ impl InvalidationSubscriber {
 // Helper function for integration
 // ============================================================================
 
-use crate::query::SharedQueryCache;
+use super::SharedQueryCache;
 
 /// Set up cache invalidation listener
 ///
@@ -546,7 +546,7 @@ pub async fn setup_cache_invalidation(
         }
     });
 
-    info!("Cache invalidation via Pub/Sub initialized");
+    debug!("Cache invalidation via Pub/Sub initialized");
     Ok(subscriber)
 }
 

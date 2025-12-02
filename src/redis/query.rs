@@ -36,7 +36,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use tracing::{debug, info};
+use tracing::debug;
 
 /// Configuration for query optimization
 #[derive(Clone, Debug)]
@@ -402,14 +402,14 @@ impl QueryPlanner {
     pub async fn invalidate_series(&self, series_id: SeriesId) {
         let mut cache = self.cache.write().await;
         cache.invalidate_series(series_id);
-        info!("Invalidated cache for series {}", series_id);
+        debug!("Invalidated cache for series {}", series_id);
     }
 
     /// Clear all cached results
     pub async fn clear_cache(&self) {
         let mut cache = self.cache.write().await;
         cache.clear();
-        info!("Cleared query cache");
+        debug!("Cleared query cache");
     }
 
     /// Get query planner statistics

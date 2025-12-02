@@ -26,7 +26,7 @@ use std::sync::Arc;
 
 use tokio::net::UdpSocket;
 use tokio::sync::broadcast;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, trace, warn};
 
 use super::error::NetworkError;
 use super::rate_limit::RateLimiter;
@@ -169,7 +169,7 @@ impl UdpListener {
         // This increases the kernel buffer to handle burst traffic
         Self::set_recv_buffer(&socket, buffer_size * 100)?;
 
-        info!(addr = %local_addr, buffer_size, "UDP listener bound");
+        debug!(addr = %local_addr, buffer_size, "UDP listener bound");
 
         Ok(Self {
             socket,
@@ -272,7 +272,7 @@ impl UdpListener {
         rate_limiter: Arc<RateLimiter>,
         mut shutdown_rx: broadcast::Receiver<()>,
     ) -> Result<(), NetworkError> {
-        info!(addr = %self.local_addr, "Starting UDP receive loop");
+        debug!(addr = %self.local_addr, "Starting UDP receive loop");
 
         // Allocate receive buffer
         let mut buffer = vec![0u8; self.buffer_size];
@@ -281,7 +281,7 @@ impl UdpListener {
             tokio::select! {
                 // Handle shutdown signal
                 _ = shutdown_rx.recv() => {
-                    info!(addr = %self.local_addr, "UDP listener shutting down");
+                    debug!(addr = %self.local_addr, "UDP listener shutting down");
                     break;
                 }
 
@@ -306,7 +306,7 @@ impl UdpListener {
         }
 
         let snapshot = self.stats.snapshot();
-        info!(
+        debug!(
             packets = snapshot.packets_received,
             bytes = snapshot.bytes_received,
             rate_limited = snapshot.rate_limited,
@@ -384,7 +384,7 @@ impl UdpListener {
         mut shutdown_rx: broadcast::Receiver<()>,
         batch_size: usize,
     ) -> Result<(), NetworkError> {
-        info!(
+        debug!(
             addr = %self.local_addr,
             batch_size,
             "Starting batched UDP receive loop"
@@ -400,7 +400,7 @@ impl UdpListener {
                 biased; // Check shutdown first
 
                 _ = shutdown_rx.recv() => {
-                    info!(addr = %self.local_addr, "UDP listener shutting down");
+                    debug!(addr = %self.local_addr, "UDP listener shutting down");
                     break;
                 }
 

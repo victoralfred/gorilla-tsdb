@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use parking_lot::RwLock;
-use tracing::{debug, info};
+use tracing::debug;
 
 use super::config::SpillConfig;
 use super::error::{SpillError, SpillResult};
@@ -48,7 +48,7 @@ impl SpillManager {
             context: format!("creating spill directory {:?}", config.directory),
         })?;
 
-        info!("Spill manager initialized at {:?}", config.directory);
+        debug!("Spill manager initialized at {:?}", config.directory);
 
         Ok(Self {
             config,
@@ -145,7 +145,7 @@ impl SpillManager {
             self.cleanup().await?;
         }
 
-        info!("Recovered {} points from spill files", recovered_count);
+        debug!("Recovered {} points from spill files", recovered_count);
         Ok(points)
     }
 
@@ -191,7 +191,7 @@ impl SpillManager {
         self.spill_active.store(false, Ordering::Release);
 
         if count > 0 {
-            info!("Cleaned up {} spill files", count);
+            debug!("Cleaned up {} spill files", count);
         }
 
         Ok(count)

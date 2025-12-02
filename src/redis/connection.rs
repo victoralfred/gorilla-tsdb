@@ -42,7 +42,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{RwLock, Semaphore};
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 use super::util::safe_redis_error;
 
@@ -437,7 +437,7 @@ impl RedisPool {
         // Establish initial connection
         pool.connect().await?;
 
-        info!("Redis connection pool initialized");
+        debug!("Redis connection pool initialized");
         Ok(pool)
     }
 

@@ -19,12 +19,12 @@ use super::types::{
     AggregateExecutionResult, CostEstimateInfo, ExecutionStep, ExplainResult,
     GroupedAggregationResult, OptimizationInfo, SeriesData,
 };
+use gorilla_tsdb::cache::SharedQueryCache;
 use gorilla_tsdb::engine::TimeSeriesDB;
 use gorilla_tsdb::query::ast::{
     AggregateQuery, DownsampleMethod, DownsampleQuery, LatestQuery, SelectQuery,
 };
 use gorilla_tsdb::query::result::{QueryResult, ResultData, ResultRow, SeriesResult};
-use gorilla_tsdb::query::SharedQueryCache;
 use gorilla_tsdb::query::{
     parse_promql, parse_sql, AggregationFunction as QueryAggFunction, Query as ParsedQuery,
 };

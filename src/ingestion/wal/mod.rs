@@ -85,7 +85,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 use tokio::sync::mpsc;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 use crate::types::DataPoint;
 
@@ -131,7 +131,7 @@ impl WalManager {
         let (write_tx, write_rx) = mpsc::channel(config.write_buffer_size);
         let writer = WalWriter::new(config.clone(), write_rx);
 
-        info!("WAL manager initialized at {:?}", config.directory);
+        debug!("WAL manager initialized at {:?}", config.directory);
 
         Ok(Self {
             config,
@@ -160,7 +160,7 @@ impl WalManager {
             }
         });
 
-        info!("WAL manager started");
+        debug!("WAL manager started");
         Ok(())
     }
 
@@ -265,7 +265,7 @@ impl WalManager {
         let recovery = WalRecovery::new(&self.config);
         let points = recovery.recover_all().await?;
 
-        info!("Recovered {} points from WAL", points.len());
+        debug!("Recovered {} points from WAL", points.len());
         self.stats
             .records_recovered
             .store(points.len() as u64, Ordering::Relaxed);
@@ -355,7 +355,7 @@ impl WalManager {
 
     /// Gracefully shutdown the WAL
     pub async fn shutdown(self) -> WalResult<()> {
-        info!("Shutting down WAL manager");
+        debug!("Shutting down WAL manager");
 
         // Final sync
         self.sync().await?;
@@ -363,7 +363,7 @@ impl WalManager {
         // Close writer
         drop(self.write_tx);
 
-        info!("WAL manager shutdown complete");
+        debug!("WAL manager shutdown complete");
         Ok(())
     }
 }

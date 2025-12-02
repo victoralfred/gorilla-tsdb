@@ -46,24 +46,19 @@ use axum::{
 use chrono::Utc;
 use config::{load_config_with_app, ServerConfig};
 use gorilla_tsdb::{
+    cache::{setup_cache_invalidation, InvalidationPublisher, QueryCache, QueryCacheConfig},
     compression::gorilla::GorillaCompressor,
     config::ApplicationConfig,
     engine::{DatabaseConfig, TimeSeriesDBBuilder},
-    query::{
-        subscription::{SubscriptionConfig, SubscriptionManager},
-        CacheConfig as QueryCacheConfig, QueryCache,
-    },
-    redis::{
-        setup_cache_invalidation, InvalidationPublisher, RedisConfig as RedisPoolConfig,
-        RedisTimeIndex,
-    },
+    query::subscription::{SubscriptionConfig, SubscriptionManager},
+    redis::{RedisConfig as RedisPoolConfig, RedisTimeIndex},
     storage::LocalDiskEngine,
 };
 use handlers::AppState;
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::signal;
 use tower_http::cors::{Any, CorsLayer};
-use tracing::info;
+use tracing::{debug, info};
 
 // =============================================================================
 // Router and Server Setup
@@ -105,6 +100,8 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/v1/series/find", get(handlers::find_series))
         // Stats
         .route("/api/v1/stats", get(handlers::get_stats))
+        // Unified cache stats (Phase 4)
+        .route("/api/v1/cache/stats", get(handlers::get_cache_stats))
         // State and CORS
         .with_state(state.clone())
         .layer(build_cors_layer(&state.config.cors_allowed_origins))
@@ -150,12 +147,12 @@ async fn init_database(
 
     let series_ids = storage.get_all_series_ids();
     if !series_ids.is_empty() {
-        info!("Found {} series on disk to index", series_ids.len());
+        debug!("Found {} series on disk to index", series_ids.len());
     }
 
     let series_metadata = storage.get_all_series_metadata();
     if !series_metadata.is_empty() {
-        info!(
+        debug!(
             "Loaded {} series metadata entries from disk",
             series_metadata.len()
         );
@@ -181,7 +178,7 @@ async fn init_database(
         storage.clone();
 
     let db = if app_config.redis.enabled {
-        info!("Connecting to Redis at {}...", app_config.redis.url);
+        debug!("Connecting to Redis at {}...", app_config.redis.url);
 
         // Build RedisConfig using the builder pattern
         let redis_config = RedisPoolConfig::with_url(&app_config.redis.url)
@@ -193,7 +190,7 @@ async fn init_database(
             .tls(app_config.redis.tls_enabled);
 
         let redis_index = RedisTimeIndex::new(redis_config).await?;
-        info!("Connected to Redis successfully");
+        debug!("Connected to Redis successfully");
 
         // Re-register series metadata using the register_series trait method
         for (series_id, metadata) in &series_metadata {
@@ -220,7 +217,7 @@ async fn init_database(
             .build()
             .await?
     } else {
-        info!("Redis disabled, using in-memory index");
+        debug!("Redis disabled, using in-memory index");
 
         let in_memory_index = gorilla_tsdb::engine::InMemoryTimeIndex::new();
         // Re-register series metadata using the register_series trait method
@@ -276,7 +273,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Starting Gorilla TSDB Server v{}",
         env!("CARGO_PKG_VERSION")
     );
-    info!(
+    debug!(
         "Configuration: listen_addr={}, data_dir={:?}",
         config.listen_addr, config.data_dir
     );
@@ -299,7 +296,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 128 MB max size, 10K max entries, 60s TTL
     let query_cache_config = QueryCacheConfig::default();
     let query_cache = Arc::new(QueryCache::new(query_cache_config));
-    info!("Query result cache initialized (128 MB max, 60s TTL)");
+    debug!("Query result cache initialized (128 MB max, 60s TTL)");
 
     // Set up Redis Pub/Sub cache invalidation if Redis is enabled
     // This enables cross-node cache coherence in multi-instance deployments
@@ -307,7 +304,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Set up the subscriber (listens for invalidation events from other nodes)
         match setup_cache_invalidation(&app_config.redis.url, query_cache.clone()).await {
             Ok(_subscriber) => {
-                info!("Redis Pub/Sub cache invalidation subscriber enabled");
+                debug!("Redis Pub/Sub cache invalidation subscriber enabled");
             }
             Err(e) => {
                 // Non-fatal: local invalidation still works, just no cross-node sync
@@ -321,7 +318,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Set up the publisher (publishes invalidation events on writes)
         match InvalidationPublisher::new(&app_config.redis.url) {
             Ok(publisher) => {
-                info!("Redis Pub/Sub cache invalidation publisher enabled");
+                debug!("Redis Pub/Sub cache invalidation publisher enabled");
                 Some(publisher)
             }
             Err(e) => {

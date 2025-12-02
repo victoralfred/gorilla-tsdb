@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use parking_lot::Mutex;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 use super::config::SpillConfig;
 use super::error::{SpillError, SpillResult};
@@ -34,11 +34,11 @@ impl SpillRecovery {
         let file_paths = list_spill_files(&self.config.directory)?;
 
         if file_paths.is_empty() {
-            info!("No spill files found for recovery");
+            debug!("No spill files found for recovery");
             return Ok(Vec::new());
         }
 
-        info!("Found {} spill files for recovery", file_paths.len());
+        debug!("Found {} spill files for recovery", file_paths.len());
 
         let mut all_points = Vec::new();
 
@@ -59,7 +59,7 @@ impl SpillRecovery {
             }
         }
 
-        info!(
+        debug!(
             "Sequential recovery complete: {} points from {} files",
             all_points.len(),
             file_paths.len()
@@ -77,7 +77,7 @@ impl SpillRecovery {
         }
 
         let parallelism = self.config.recovery_parallelism;
-        info!(
+        debug!(
             "Starting parallel recovery of {} files with {} workers",
             file_paths.len(),
             parallelism
@@ -139,7 +139,7 @@ impl SpillRecovery {
         // Flatten results
         let points: Vec<_> = all_results.into_iter().flatten().collect();
 
-        info!("Parallel recovery complete: {} points", points.len());
+        debug!("Parallel recovery complete: {} points", points.len());
 
         Ok(points)
     }

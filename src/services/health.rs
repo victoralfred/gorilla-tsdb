@@ -418,7 +418,7 @@ impl HealthChecker {
 impl Service for HealthChecker {
     async fn start(&self, mut shutdown: broadcast::Receiver<()>) -> Result<(), ServiceError> {
         *self.status.write() = ServiceStatus::Running;
-        tracing::info!(
+        tracing::debug!(
             interval_secs = self.config.check_interval.as_secs(),
             "Health checker started"
         );
@@ -436,7 +436,7 @@ impl Service for HealthChecker {
                 result = shutdown.recv() => {
                     match result {
                         Ok(()) | Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                            tracing::info!("Health checker received shutdown signal");
+                            tracing::debug!("Health checker received shutdown signal");
                             break;
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
@@ -467,7 +467,7 @@ impl Service for HealthChecker {
         }
 
         *self.status.write() = ServiceStatus::Stopped;
-        tracing::info!("Health checker stopped");
+        tracing::debug!("Health checker stopped");
         Ok(())
     }
 
