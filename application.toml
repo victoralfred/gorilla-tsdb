@@ -63,7 +63,7 @@ log_level = "trace"
 # ----------------------------------------------------------------------------
 [storage]
 # Base directory for all data files
-data_dir = "/home/voseghale/projects/db/source/data/tsdb"
+data_dir = "/home/voseghale/data/tsdb"
 
 # Maximum chunk size in bytes before rotation (default: 1MB)
 # max_chunk_size_bytes = 1048576
