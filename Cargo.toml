@@ -12,7 +12,7 @@ path = "src/lib.rs"
 
 [[bin]]
 name = "tsdb-server"
-path = "src/bin/server.rs"
+path = "src/bin/server/main.rs"
 
 [features]
 default = []
