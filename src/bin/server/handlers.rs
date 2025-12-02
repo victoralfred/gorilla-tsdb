@@ -595,7 +595,7 @@ pub async fn execute_sql_promql_query(
     )
     .await
     {
-        Ok((language, query_type, _points, agg_execution_result, series_data)) => {
+        Ok((language, query_type, _points, agg_execution_result, series_data, explain_result)) => {
             let (from_date, to_date) = series_data
                 .as_ref()
                 .map(|series| {
@@ -649,6 +649,7 @@ pub async fn execute_sql_promql_query(
                     query_type: Some(query_type),
                     language: Some(language.to_string()),
                     aggregation: agg_result,
+                    plan: explain_result,
                     error: None,
                 }),
             )
@@ -665,6 +666,7 @@ pub async fn execute_sql_promql_query(
                     query_type: None,
                     language: None,
                     aggregation: None,
+                    plan: None,
                     error: Some(e),
                 }),
             )

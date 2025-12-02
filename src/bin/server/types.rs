@@ -188,6 +188,9 @@ pub struct SqlPromqlResponse {
     /// Aggregation result (for aggregate queries)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aggregation: Option<SqlAggregationResult>,
+    /// EXPLAIN result (for EXPLAIN queries)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan: Option<ExplainResult>,
     /// Error message if failed
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
@@ -360,4 +363,74 @@ pub struct StatsResponse {
 pub struct HealthResponse {
     pub status: &'static str,
     pub version: &'static str,
+}
+
+// =============================================================================
+// EXPLAIN Types
+// =============================================================================
+
+/// Comprehensive EXPLAIN result with execution details
+///
+/// Provides detailed information about how a query will be executed,
+/// including human-readable descriptions, step-by-step execution plan,
+/// and cost estimates.
+#[derive(Debug, Clone, Serialize)]
+pub struct ExplainResult {
+    /// Human-readable description of what the query does
+    pub description: String,
+
+    /// Step-by-step execution plan showing how the query will be processed
+    pub execution_steps: Vec<ExecutionStep>,
+
+    /// Human-readable logical plan tree representation
+    pub logical_plan: String,
+
+    /// Cost estimates based on planner analysis
+    pub cost_estimate: CostEstimateInfo,
+
+    /// Query classification (select, aggregate, downsample, latest)
+    pub query_type: String,
+
+    /// Optimization passes that are applied to the query
+    pub optimizations: Vec<OptimizationInfo>,
+}
+
+/// A single step in the query execution plan
+#[derive(Debug, Clone, Serialize)]
+pub struct ExecutionStep {
+    /// Step number (1-indexed)
+    pub step: u32,
+    /// Operation name (e.g., Scan, Filter, Aggregate)
+    pub operation: String,
+    /// What this step does in plain language
+    pub description: String,
+    /// Input to this step (None for source operators)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input: Option<String>,
+    /// Output from this step
+    pub output: String,
+}
+
+/// Cost estimates for query execution
+#[derive(Debug, Clone, Serialize)]
+pub struct CostEstimateInfo {
+    /// Estimated number of rows to process
+    pub estimated_rows: u64,
+    /// Estimated bytes to read from storage
+    pub estimated_bytes: u64,
+    /// Number of storage chunks to scan
+    pub chunks_to_scan: u64,
+    /// Estimated execution time category (fast, medium, slow, very_slow)
+    pub execution_category: String,
+}
+
+/// Information about an optimization pass
+#[derive(Debug, Clone, Serialize)]
+pub struct OptimizationInfo {
+    /// Optimization name (e.g., predicate_pushdown)
+    pub name: String,
+    /// Whether this optimization was applied
+    pub applied: bool,
+    /// What this optimization does
+    pub description: String,
 }
