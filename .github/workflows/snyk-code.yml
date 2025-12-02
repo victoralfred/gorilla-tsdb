@@ -1,0 +1,33 @@
+name: "Snyk Code Scan"
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  snyk-code:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust (optional for Snyk Code)
+        uses: tj-actions/changed-files@c65cd883420fd2eb864698a825fc4162dd94482c # v44
+
+      - name: Install Snyk CLI
+        run: |
+          curl -sL https://snyk.io/install.sh | bash
+          echo "${HOME}/.snyk" >> $GITHUB_PATH
+
+      - name: Run Snyk Code Scan
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          snyk code test --json > snyk-report.json
+          snyk code test  # human readable
