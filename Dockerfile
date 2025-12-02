@@ -53,8 +53,9 @@ RUN cargo build --release --bin ${APP_NAME} \
 # Stage 2: RUNTIME
 # Base: Debian 13 (Trixie) Slim for latest security patches
 # ============================================================
-FROM debian:trixie-slim
-
+FROM debian:13.2-slim
+# Define app name for clarity and re-use
+ENV APP_NAME=tsdb-server
 # Define app name for clarity and re-use
 ARG APP_NAME=tsdb-server
 ARG APP_USER=tsdb
@@ -64,22 +65,18 @@ ARG APP_UID=1000
 LABEL org.opencontainers.image.title="Gorilla TSDB" \
       org.opencontainers.image.description="High-performance time-series database with Gorilla compression" \
       org.opencontainers.image.licenses="MIT"
+# 1. Install Runtime Dependencies
+RUN apt update && apt install -y \
+    ca-certificates \
+    libssl3 \
+    bash \
+    procps \
+    # Clean up the apt cache and lists
+    && rm -rf /var/lib/apt/lists/*
 
-# Install Runtime Dependencies
-# - ca-certificates: TLS certificate validation
-# - libssl3t64: OpenSSL runtime (Trixie uses t64 suffix for time64 ABI)
-# - tini: Minimal init for proper signal handling
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        ca-certificates \
-        libssl3t64 \
-        tini \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
-
-# Setup User and Directories
-# Create non-root user with fixed UID (good for volume permissions)
-RUN useradd --no-log-init -m -u ${APP_UID} -s /usr/sbin/nologin ${APP_USER}
+# 2. Setup User and Directories
+# Create non-root user with a fixed UID (good for volume permissions)
+RUN useradd -m -u 1000 -s /bin/bash tsdb
 
 # Create data directory and set ownership
 RUN mkdir -p /data/gorilla-tsdb \
