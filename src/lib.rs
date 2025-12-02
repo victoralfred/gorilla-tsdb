@@ -48,6 +48,10 @@ pub mod services;
 /// Provides string interning, series registry, and tag-based lookups
 pub mod aggregation;
 
+/// Unified cache module for all cache-related functionality
+/// Provides storage cache, query cache, local metadata cache, and unified statistics
+pub mod cache;
+
 // Re-export main types
 pub use engine::{DatabaseConfig, TimeSeriesDB, TimeSeriesDBBuilder};
 pub use error::{Error, Result};

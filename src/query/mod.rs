@@ -59,7 +59,6 @@
 //! ```
 
 pub mod ast;
-pub mod cache;
 pub mod chunk_index;
 pub mod error;
 pub mod executor;
@@ -75,7 +74,6 @@ pub use ast::{
     Aggregation, AggregationFunction, DownsampleMethod, OrderDirection, Predicate, PredicateOp,
     Query, QueryBuilder, SeriesSelector, WindowSpec,
 };
-pub use cache::{CacheConfig, CacheKey, QueryCache, SharedQueryCache};
 pub use chunk_index::{ChunkIndex, ChunkIndexConfig, IndexedChunk};
 pub use error::{QueryError, QueryErrorKind};
 pub use executor::{ExecutorConfig, QueryExecutor};

@@ -33,20 +33,20 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use gorilla_tsdb::storage::cache::{CacheManager, CacheConfig, CacheKey};
+//! use gorilla_tsdb::cache::{CacheManager, StorageCacheConfig, StorageCacheKey};
 //! use std::sync::Arc;
 //!
 //! # #[tokio::main]
 //! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! // Create cache with default config
-//! let config = CacheConfig::default();
+//! let config = StorageCacheConfig::default();
 //! let cache = Arc::new(CacheManager::<Vec<u8>>::new(config));
 //!
 //! // Start background eviction
 //! cache.start_background_eviction().await?;
 //!
 //! // Cache operations
-//! let key = CacheKey::new(1, 12345);
+//! let key = StorageCacheKey::new(1, 12345);
 //! let data = vec![1, 2, 3, 4];
 //! cache.insert(key.clone(), data, 4, 0);
 //! let cached = cache.get(&key);

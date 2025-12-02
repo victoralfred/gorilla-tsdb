@@ -46,17 +46,12 @@ use axum::{
 use chrono::Utc;
 use config::{load_config_with_app, ServerConfig};
 use gorilla_tsdb::{
+    cache::{setup_cache_invalidation, InvalidationPublisher, QueryCache, QueryCacheConfig},
     compression::gorilla::GorillaCompressor,
     config::ApplicationConfig,
     engine::{DatabaseConfig, TimeSeriesDBBuilder},
-    query::{
-        subscription::{SubscriptionConfig, SubscriptionManager},
-        CacheConfig as QueryCacheConfig, QueryCache,
-    },
-    redis::{
-        setup_cache_invalidation, InvalidationPublisher, RedisConfig as RedisPoolConfig,
-        RedisTimeIndex,
-    },
+    query::subscription::{SubscriptionConfig, SubscriptionManager},
+    redis::{RedisConfig as RedisPoolConfig, RedisTimeIndex},
     storage::LocalDiskEngine,
 };
 use handlers::AppState;
@@ -105,6 +100,8 @@ fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/v1/series/find", get(handlers::find_series))
         // Stats
         .route("/api/v1/stats", get(handlers::get_stats))
+        // Unified cache stats (Phase 4)
+        .route("/api/v1/cache/stats", get(handlers::get_cache_stats))
         // State and CORS
         .with_state(state.clone())
         .layer(build_cors_layer(&state.config.cors_allowed_origins))

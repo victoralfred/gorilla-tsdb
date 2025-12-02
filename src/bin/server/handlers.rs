@@ -19,12 +19,12 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use gorilla_tsdb::cache::InvalidationPublisher;
+use gorilla_tsdb::cache::SharedQueryCache;
 use gorilla_tsdb::engine::TimeSeriesDB;
 use gorilla_tsdb::query::ast::{Query as AstQuery, SelectQuery, SeriesSelector};
 use gorilla_tsdb::query::result::QueryResult;
 use gorilla_tsdb::query::subscription::SubscriptionManager;
-use gorilla_tsdb::query::SharedQueryCache;
-use gorilla_tsdb::redis::InvalidationPublisher;
 use gorilla_tsdb::storage::LocalDiskEngine;
 use gorilla_tsdb::types::{DataPoint, SeriesId, TagFilter, TimeRange};
 use std::collections::HashMap;
@@ -134,6 +134,43 @@ pub async fn get_stats(State(state): State<Arc<AppState>>) -> Json<StatsResponse
         query_cache_evictions: cache_stats.evictions.load(Ordering::Relaxed),
         query_cache_invalidations: cache_stats.invalidations.load(Ordering::Relaxed),
     })
+}
+
+/// Unified cache statistics endpoint
+///
+/// Returns comprehensive cache statistics from all cache layers:
+/// - Query cache (LRU with TTL for query results)
+/// - Storage cache (when available, for chunk data)
+///
+/// # Response
+///
+/// ```json
+/// {
+///   "query": {
+///     "entries": 100,
+///     "size_bytes": 10240,
+///     "hits": 500,
+///     "misses": 100,
+///     "hit_rate": 0.833,
+///     "evictions": 10,
+///     "invalidations": 5
+///   },
+///   "total_memory_bytes": 10240,
+///   "overall_hit_rate": 0.833,
+///   "total_hits": 500,
+///   "total_misses": 100
+/// }
+/// ```
+pub async fn get_cache_stats(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+    use gorilla_tsdb::cache::UnifiedCacheManager;
+
+    // Create unified manager (storage cache not yet integrated in AppState)
+    let manager = UnifiedCacheManager::new(state.query_cache.clone(), None);
+    let stats = manager.stats();
+
+    Json(serde_json::to_value(&stats).unwrap_or(serde_json::json!({
+        "error": "Failed to serialize cache stats"
+    })))
 }
 
 /// Prometheus metrics endpoint with database and query cache statistics

@@ -28,7 +28,7 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use gorilla_tsdb::redis::pubsub::{InvalidationPublisher, InvalidationSubscriber};
+//! use gorilla_tsdb::cache::{InvalidationPublisher, InvalidationSubscriber};
 //!
 //! // Publisher (on write path)
 //! let publisher = InvalidationPublisher::new("redis://localhost:6379").await?;
@@ -489,7 +489,7 @@ impl InvalidationSubscriber {
 // Helper function for integration
 // ============================================================================
 
-use crate::query::SharedQueryCache;
+use super::SharedQueryCache;
 
 /// Set up cache invalidation listener
 ///
