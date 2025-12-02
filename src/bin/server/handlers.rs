@@ -30,7 +30,7 @@ use gorilla_tsdb::types::{DataPoint, SeriesId, TagFilter, TimeRange};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use tracing::{error, info, warn};
+use tracing::{debug, error, warn};
 
 // =============================================================================
 // Application State
@@ -621,7 +621,7 @@ pub async fn execute_sql_promql_query(
     State(state): State<Arc<AppState>>,
     Json(req): Json<SqlPromqlRequest>,
 ) -> impl IntoResponse {
-    info!(query = %req.query, language = %req.language, "Executing SQL/PromQL query");
+    debug!(query = %req.query, language = %req.language, "Executing SQL/PromQL query");
 
     // Execute with caching enabled
     match query_router::execute_query_with_cache(
@@ -744,7 +744,7 @@ pub async fn register_series(
         .await
     {
         Ok(()) => {
-            info!(series_id = series_id, metric = %req.metric_name, "Series registered");
+            debug!(series_id = series_id, metric = %req.metric_name, "Series registered");
             (
                 StatusCode::OK,
                 Json(serde_json::json!({
@@ -775,7 +775,7 @@ pub async fn find_series(
 
     match state.db.find_series(&params.metric_name, &tag_filter).await {
         Ok(series_ids) => {
-            info!(metric = %params.metric_name, count = series_ids.len(), "Found series");
+            debug!(metric = %params.metric_name, count = series_ids.len(), "Found series");
             (
                 StatusCode::OK,
                 Json(FindSeriesResponse {

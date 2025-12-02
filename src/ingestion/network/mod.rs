@@ -59,7 +59,7 @@ pub use udp::UdpListener;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use tracing::{info, warn};
+use tracing::{debug, warn};
 
 /// Network layer configuration
 ///
@@ -298,7 +298,7 @@ impl NetworkListener {
     /// This method spawns listener tasks and returns immediately.
     /// Use `shutdown()` to stop all listeners gracefully.
     pub async fn start(&self) -> Result<(), NetworkError> {
-        info!("Starting network listeners");
+        debug!("Starting network listeners");
 
         // Start TCP listener if configured
         if let Some(addr) = self.config.tcp_addr {
@@ -319,7 +319,7 @@ impl NetworkListener {
                 }
             });
 
-            info!("TCP listener started on {}", addr);
+            debug!("TCP listener started on {}", addr);
         }
 
         // Start UDP listener if configured
@@ -335,19 +335,19 @@ impl NetworkListener {
                 }
             });
 
-            info!("UDP listener started on {}", addr);
+            debug!("UDP listener started on {}", addr);
         }
 
         // HTTP listener would be started here
         // (TODO: implement HTTP listener in separate task)
 
-        info!("Network listeners started");
+        debug!("Network listeners started");
         Ok(())
     }
 
     /// Shutdown all listeners gracefully
     pub fn shutdown(&self) {
-        info!("Shutting down network listeners");
+        debug!("Shutting down network listeners");
         let _ = self.shutdown_tx.send(());
     }
 

@@ -36,7 +36,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{Notify, RwLock};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, warn};
 
 /// Configuration for failover behavior
 #[derive(Clone, Debug)]
@@ -414,7 +414,7 @@ impl FailoverManager {
     pub async fn add_replica(&self, replica: Arc<RedisPool>) {
         let mut replicas = self.replicas.write().await;
         replicas.push(replica);
-        info!("Added replica (total: {})", replicas.len());
+        debug!("Added replica (total: {})", replicas.len());
     }
 
     /// Get current failover state (lock-free)
@@ -509,7 +509,7 @@ impl FailoverManager {
             return;
         }
 
-        info!("Initiating failover from primary");
+        debug!("Initiating failover from primary");
         self.failover_count.fetch_add(1, Ordering::Relaxed);
 
         // Try replicas first
@@ -519,7 +519,7 @@ impl FailoverManager {
             if matches!(health, HealthStatus::Healthy | HealthStatus::Degraded) {
                 // Atomically: FailingOver -> Replica
                 if self.try_transition(FailoverState::FailingOver, FailoverState::Replica) {
-                    info!("Failed over to replica {}", i);
+                    debug!("Failed over to replica {}", i);
                 } else {
                     // Someone else changed state - log but continue
                     warn!("Unexpected state change during failover to replica");
@@ -560,7 +560,7 @@ impl FailoverManager {
             return;
         }
 
-        info!("Recovering to primary Redis");
+        debug!("Recovering to primary Redis");
         self.recovery_count.fetch_add(1, Ordering::Relaxed);
 
         // Verify primary is truly healthy
@@ -569,7 +569,7 @@ impl FailoverManager {
             // Atomically: Recovering -> Primary
             if self.try_transition(FailoverState::Recovering, FailoverState::Primary) {
                 self.consecutive_successes.store(0, Ordering::Relaxed);
-                info!("Successfully recovered to primary");
+                debug!("Successfully recovered to primary");
 
                 // Clear local cache after recovery (async-safe)
                 let mut cache = self.local_cache.write().await;
@@ -676,7 +676,7 @@ impl FailoverManager {
                     debug!("Health check complete, state: {}", self.state());
                 }
                 _ = self.shutdown.notified() => {
-                    info!("Health monitor shutting down");
+                    debug!("Health monitor shutting down");
                     break;
                 }
             }

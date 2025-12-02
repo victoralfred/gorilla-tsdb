@@ -47,7 +47,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 /// Key prefixes for Redis data structures
 const KEY_REGISTRY: &str = "ts:registry";
@@ -197,7 +197,7 @@ impl RedisTimeIndex {
         let pool = Arc::new(RedisPool::new(config).await?);
         let scripts = Arc::new(LuaScripts::new());
 
-        info!("Redis time index initialized");
+        debug!("Redis time index initialized");
 
         Ok(Self {
             pool,
@@ -932,7 +932,7 @@ impl TimeIndex for RedisTimeIndex {
             cache.invalidate_series(series_id);
         }
 
-        info!("Deleted series {} ({} chunks)", series_id, deleted);
+        debug!("Deleted series {} ({} chunks)", series_id, deleted);
         Ok(())
     }
 
@@ -955,7 +955,7 @@ impl TimeIndex for RedisTimeIndex {
             let mut cache = self.local_cache.write().await;
             cache.series_meta.clear();
         }
-        info!("Index rebuild requested (cache cleared)");
+        debug!("Index rebuild requested (cache cleared)");
         Ok(())
     }
 }

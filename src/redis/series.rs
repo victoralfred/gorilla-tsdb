@@ -33,7 +33,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{debug, info};
+use tracing::debug;
 
 /// Key prefix for series registry (reserved for direct Redis access)
 #[allow(dead_code)]
@@ -185,7 +185,7 @@ impl SeriesManager {
         self.index.register_series(series_id, metadata).await?;
 
         // For now, assume success
-        info!("Created/verified series: {}", series_id);
+        debug!("Created/verified series: {}", series_id);
         Ok(true)
     }
 
@@ -205,7 +205,7 @@ impl SeriesManager {
         };
 
         self.index.register_series(series_id, metadata).await?;
-        info!(
+        debug!(
             "Created series {} with {} day retention",
             series_id, retention_days
         );
@@ -292,7 +292,7 @@ impl SeriesManager {
     /// Delete a series and all its data
     pub async fn delete_series(&self, series_id: SeriesId) -> Result<(), IndexError> {
         self.index.delete_series(series_id).await?;
-        info!("Deleted series: {}", series_id);
+        debug!("Deleted series: {}", series_id);
         Ok(())
     }
 
@@ -309,7 +309,7 @@ impl SeriesManager {
             }
         }
 
-        info!("Deleted {} series in batch", deleted);
+        debug!("Deleted {} series in batch", deleted);
         Ok(deleted)
     }
 

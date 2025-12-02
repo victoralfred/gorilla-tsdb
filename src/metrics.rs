@@ -196,7 +196,7 @@ pub fn init() {
     // Initialize uptime
     UPTIME_SECONDS.set(0.0);
 
-    tracing::info!("Metrics system initialized");
+    tracing::debug!("Metrics system initialized");
 }
 
 /// Get metrics in Prometheus text format

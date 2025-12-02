@@ -78,7 +78,7 @@ use crate::types::DataPoint;
 use std::fmt;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 /// Maximum allowed batch size to prevent memory spikes (100K points)
 pub const MAX_INGEST_BATCH_SIZE: usize = 100_000;
@@ -242,7 +242,7 @@ impl IngestionPipeline {
 
         let (shutdown_tx, _) = tokio::sync::broadcast::channel(1);
 
-        info!(
+        debug!(
             "Ingestion pipeline initialized with {} writer workers",
             config.writer.num_workers
         );
@@ -294,7 +294,7 @@ impl IngestionPipeline {
             }
         });
 
-        info!("Ingestion pipeline started");
+        debug!("Ingestion pipeline started");
         Ok(())
     }
 
@@ -407,7 +407,7 @@ impl IngestionPipeline {
     /// Returns error if flush fails during shutdown. The shutdown signal
     /// is still sent even if flush fails, but the error is propagated.
     pub async fn shutdown(mut self) -> Result<(), IngestionError> {
-        info!("Shutting down ingestion pipeline");
+        debug!("Shutting down ingestion pipeline");
 
         // Flush remaining data - capture any error
         let flush_result = self.flush().await;
@@ -419,7 +419,7 @@ impl IngestionPipeline {
 
         // Log completion status
         if flush_result.is_ok() {
-            info!("Ingestion pipeline shutdown complete");
+            debug!("Ingestion pipeline shutdown complete");
         } else {
             warn!("Ingestion pipeline shutdown with flush errors");
         }

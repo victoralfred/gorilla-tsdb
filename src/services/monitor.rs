@@ -436,7 +436,7 @@ impl MonitorService {
 impl Service for MonitorService {
     async fn start(&self, mut shutdown: broadcast::Receiver<()>) -> Result<(), ServiceError> {
         *self.status.write() = ServiceStatus::Running;
-        tracing::info!(
+        tracing::debug!(
             interval_secs = self.config.collection_interval.as_secs(),
             "Monitor service started"
         );
@@ -449,7 +449,7 @@ impl Service for MonitorService {
                 result = shutdown.recv() => {
                     match result {
                         Ok(()) | Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                            tracing::info!("Monitor service received shutdown signal");
+                            tracing::debug!("Monitor service received shutdown signal");
                             break;
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
@@ -469,7 +469,7 @@ impl Service for MonitorService {
         }
 
         *self.status.write() = ServiceStatus::Stopped;
-        tracing::info!("Monitor service stopped");
+        tracing::debug!("Monitor service stopped");
         Ok(())
     }
 

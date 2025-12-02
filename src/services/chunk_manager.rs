@@ -163,7 +163,7 @@ impl ChunkManager {
         }
 
         if sealed_count > 0 {
-            tracing::info!(
+            tracing::debug!(
                 sealed = sealed_count,
                 bytes = sealed_bytes,
                 points = sealed_points,
@@ -225,7 +225,7 @@ impl ChunkManager {
 impl Service for ChunkManager {
     async fn start(&self, mut shutdown: broadcast::Receiver<()>) -> Result<(), ServiceError> {
         *self.status.write() = ServiceStatus::Running;
-        tracing::info!(
+        tracing::debug!(
             interval_secs = self.config.seal_check_interval.as_secs(),
             "Chunk manager started"
         );
@@ -238,7 +238,7 @@ impl Service for ChunkManager {
                 result = shutdown.recv() => {
                     match result {
                         Ok(()) | Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                            tracing::info!("Chunk manager received shutdown signal");
+                            tracing::debug!("Chunk manager received shutdown signal");
                             break;
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
@@ -263,7 +263,7 @@ impl Service for ChunkManager {
         }
 
         *self.status.write() = ServiceStatus::Stopped;
-        tracing::info!("Chunk manager stopped");
+        tracing::debug!("Chunk manager stopped");
         Ok(())
     }
 

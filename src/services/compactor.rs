@@ -343,7 +343,7 @@ impl CompactionService {
             stats.total_compaction_time_ms += duration_ms;
         }
 
-        tracing::info!(
+        tracing::debug!(
             job_id = job.id,
             chunks = job.chunks.len(),
             duration_ms = duration_ms,
@@ -371,7 +371,7 @@ impl CompactionService {
 impl Service for CompactionService {
     async fn start(&self, mut shutdown: broadcast::Receiver<()>) -> Result<(), ServiceError> {
         *self.status.write() = ServiceStatus::Running;
-        tracing::info!(
+        tracing::debug!(
             strategy = ?self.config.strategy,
             workers = self.config.worker_count,
             "Compaction service started"
@@ -385,7 +385,7 @@ impl Service for CompactionService {
                 result = shutdown.recv() => {
                     match result {
                         Ok(()) | Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                            tracing::info!("Compaction service received shutdown signal");
+                            tracing::debug!("Compaction service received shutdown signal");
                             break;
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
@@ -411,7 +411,7 @@ impl Service for CompactionService {
         self.process_jobs().await;
 
         *self.status.write() = ServiceStatus::Stopped;
-        tracing::info!("Compaction service stopped");
+        tracing::debug!("Compaction service stopped");
         Ok(())
     }
 

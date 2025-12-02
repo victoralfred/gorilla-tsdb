@@ -6,7 +6,7 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tracing::{info, warn};
+use tracing::{debug, warn};
 
 use super::metrics::IngestionMetrics;
 
@@ -236,7 +236,7 @@ impl BackpressureController {
             }
             self.metrics.record_backpressure_activated();
         } else if !should_activate && was_active {
-            info!("Backpressure deactivated");
+            debug!("Backpressure deactivated");
             self.metrics.record_backpressure_deactivated();
         }
 

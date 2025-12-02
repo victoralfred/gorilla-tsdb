@@ -42,7 +42,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Notify;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 /// Key prefix for write buffer
 const KEY_BUFFER_PREFIX: &str = "ts:series:";
@@ -386,7 +386,7 @@ impl WriteBuffer {
         self.flush_count.fetch_add(1, Ordering::Relaxed);
         self.flush_notify.notify_waiters();
 
-        info!("Flushed {} points for series {}", points_count, series_id);
+        debug!("Flushed {} points for series {}", points_count, series_id);
 
         Ok(all_points)
     }
@@ -532,7 +532,7 @@ impl BufferFlushTask {
                     }
                 }
                 _ = self.shutdown.notified() => {
-                    info!("Buffer flush task shutting down");
+                    debug!("Buffer flush task shutting down");
                     break;
                 }
             }

@@ -45,7 +45,7 @@ use tokio::sync::broadcast;
 use tokio_rustls::TlsAcceptor;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, warn};
 
 use super::error::NetworkError;
 use super::rate_limit::RateLimiter;
@@ -194,7 +194,7 @@ impl HttpListener {
 
         let local_addr = listener.local_addr()?;
         let has_tls = self.tls_acceptor.is_some();
-        info!(
+        debug!(
             addr = %local_addr,
             tls = has_tls,
             "HTTP listener started"
@@ -260,7 +260,7 @@ impl HttpListener {
             )
             .with_graceful_shutdown(async move {
                 let _ = shutdown_rx.recv().await;
-                info!("HTTP listener shutting down");
+                debug!("HTTP listener shutting down");
             })
             .await
             .map_err(|e| NetworkError::Io(std::io::Error::other(e.to_string())))?;
@@ -296,7 +296,7 @@ impl HttpListener {
                         std::future::pending::<()>().await;
                     }
                 } => {
-                    info!("HTTP listener shutting down");
+                    debug!("HTTP listener shutting down");
                     break;
                 }
             };

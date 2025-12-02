@@ -17,7 +17,7 @@ use tokio::net::{TcpListener as TokioTcpListener, TcpStream};
 use tokio::sync::broadcast;
 use tokio::time::timeout;
 use tokio_rustls::TlsAcceptor;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, trace, warn};
 
 use super::connection::{ConnectionConfig, ConnectionManager};
 use super::error::NetworkError;
@@ -107,7 +107,7 @@ impl TcpListener {
             None => None,
         };
 
-        info!(
+        debug!(
             addr = %local_addr,
             tls = tls_acceptor.is_some(),
             "TCP listener bound"
@@ -215,7 +215,7 @@ impl TcpListener {
         rate_limiter: Arc<RateLimiter>,
         mut shutdown_rx: broadcast::Receiver<()>,
     ) -> Result<(), NetworkError> {
-        info!(addr = %self.local_addr, "Starting TCP accept loop");
+        debug!(addr = %self.local_addr, "Starting TCP accept loop");
 
         let tls_acceptor = self.tls_acceptor.clone();
         let idle_timeout = self.connection_config.idle_timeout;
@@ -226,7 +226,7 @@ impl TcpListener {
             tokio::select! {
                 // Handle shutdown signal
                 _ = shutdown_rx.recv() => {
-                    info!(addr = %self.local_addr, "TCP listener shutting down");
+                    debug!(addr = %self.local_addr, "TCP listener shutting down");
                     break;
                 }
 

@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use parking_lot::Mutex;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 use super::config::WalConfig;
 use super::error::{WalError, WalResult};
@@ -41,11 +41,11 @@ impl WalRecovery {
         let segment_paths = list_segments(&self.config.directory)?;
 
         if segment_paths.is_empty() {
-            info!("No WAL segments found for recovery");
+            debug!("No WAL segments found for recovery");
             return Ok(Vec::new());
         }
 
-        info!("Found {} WAL segments for recovery", segment_paths.len());
+        debug!("Found {} WAL segments for recovery", segment_paths.len());
 
         let mut all_points = Vec::new();
 
@@ -62,7 +62,7 @@ impl WalRecovery {
             }
         }
 
-        info!(
+        debug!(
             "Recovery complete: {} total points from {} segments",
             all_points.len(),
             segment_paths.len()
@@ -148,7 +148,7 @@ impl WalRecovery {
             return Ok(Vec::new());
         }
 
-        info!(
+        debug!(
             "Starting parallel recovery of {} segments with parallelism {}",
             segment_paths.len(),
             parallelism
@@ -204,7 +204,7 @@ impl WalRecovery {
         // Flatten results
         let points: Vec<_> = all_results.into_iter().flatten().collect();
 
-        info!("Parallel recovery complete: {} points", points.len());
+        debug!("Parallel recovery complete: {} points", points.len());
 
         Ok(points)
     }

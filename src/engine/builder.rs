@@ -11,7 +11,7 @@ use crate::types::{ChunkId, DataPoint, SeriesId, TagFilter, TimeRange};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 /// Database configuration
 #[derive(Clone, Debug)]
@@ -435,7 +435,7 @@ impl TimeSeriesDB {
             .await
             .map_err(Error::Index)?;
 
-        info!(
+        debug!(
             series_id = series_id,
             metric_name = metric_name,
             "Series registered"
@@ -518,7 +518,7 @@ impl TimeSeriesDB {
             .await
             .map_err(Error::Index)?;
 
-        info!(series_id = series_id, "Series deleted");
+        debug!(series_id = series_id, "Series deleted");
 
         Ok(())
     }
@@ -529,7 +529,7 @@ impl TimeSeriesDB {
     pub async fn maintenance(&self) -> Result<()> {
         let report = self.storage.maintenance().await.map_err(Error::Storage)?;
 
-        info!(
+        debug!(
             chunks_deleted = report.chunks_deleted,
             bytes_freed = report.bytes_freed,
             "Maintenance completed"
@@ -603,7 +603,7 @@ impl TimeSeriesDB {
             }
         }
 
-        info!(
+        debug!(
             series_count = series_ids.len(),
             chunks_indexed = total_chunks,
             "Index rebuilt from storage"

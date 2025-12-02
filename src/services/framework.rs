@@ -264,7 +264,7 @@ impl ServiceManager {
             },
         );
 
-        tracing::info!(service = name, "Service registered");
+        tracing::debug!(service = name, "Service registered");
         Ok(())
     }
 
@@ -318,7 +318,7 @@ impl ServiceManager {
             self.start_service(name).await?;
         }
 
-        tracing::info!("All services started");
+        tracing::debug!("All services started");
         Ok(())
     }
 
@@ -388,7 +388,7 @@ impl ServiceManager {
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
 
-        tracing::info!(service = name, "Service started");
+        tracing::debug!(service = name, "Service started");
         Ok(())
     }
 
@@ -416,7 +416,7 @@ impl ServiceManager {
 
             match tokio::time::timeout(remaining, task).await {
                 Ok(Ok(Ok(()))) => {
-                    tracing::info!(service = name, "Service stopped gracefully");
+                    tracing::debug!(service = name, "Service stopped gracefully");
                 }
                 Ok(Ok(Err(e))) => {
                     tracing::warn!(service = name, error = %e, "Service stopped with error");
@@ -548,7 +548,7 @@ impl ServiceManager {
                 // Attempt to restart
                 match self.start_service(name).await {
                     Ok(()) => {
-                        tracing::info!(service = name, "Service restarted successfully");
+                        tracing::debug!(service = name, "Service restarted successfully");
                         restarted.push(name);
                     }
                     Err(e) => {

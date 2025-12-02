@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc, RwLock};
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 use super::backpressure::BackpressureController;
 use super::batch::PointBatch;
@@ -465,7 +465,7 @@ impl WriteBufferManager {
 
         let mut flush_interval = tokio::time::interval(self.config.flush_interval);
 
-        info!("WriteBufferManager started");
+        debug!("WriteBufferManager started");
 
         loop {
             tokio::select! {
@@ -485,7 +485,7 @@ impl WriteBufferManager {
 
                 // Shutdown signal
                 _ = shutdown.recv() => {
-                    info!("WriteBufferManager shutting down");
+                    debug!("WriteBufferManager shutting down");
                     break;
                 }
             }
@@ -496,7 +496,7 @@ impl WriteBufferManager {
             warn!("Error in final flush: {}", e);
         }
 
-        info!("WriteBufferManager stopped");
+        debug!("WriteBufferManager stopped");
         Ok(())
     }
 
