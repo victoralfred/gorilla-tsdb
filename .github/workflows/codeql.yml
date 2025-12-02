@@ -1,4 +1,3 @@
-# .github/workflows/codeql-analysis.yml
 name: "CodeQL Analysis"
 
 on:
@@ -25,12 +24,12 @@ jobs:
       fail-fast: false
       matrix:
         language: [ rust, actions ]
-        build-mode: [ manual ]
+        build-mode: [ none ]
         include:
           - language: rust
-            build-mode: manual
+            build-mode: none
           - language: actions
-            build-mode: manual
+            build-mode: none
 
     steps:
       - name: Checkout repository
@@ -38,7 +37,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Rust toolchain only when needed
+      # Rust toolchain - only needed for Rust
       - name: Install Rust toolchain
         if: matrix.language == 'rust'
         uses: dtolnay/rust-toolchain@stable
@@ -50,16 +49,16 @@ jobs:
           build-mode: ${{ matrix.build-mode }}
           queries: security-and-quality
 
-      # ---- Build for Rust (Required for accurate SAST) ----
-      - name: Build Rust (CodeQL Capture)
+      # ----- Rust Build (this is the REAL build CodeQL captures) -----
+      - name: Build Rust (Cargo Build)
         if: matrix.language == 'rust'
         run: |
           cargo build --workspace --all-targets --locked
 
-      # ---- Build for GitHub Actions (No-op but required placeholder) ----
-      - name: Actions language pre-processing
+      # Actions language requires no build step
+      - name: Prepare Actions analysis
         if: matrix.language == 'actions'
-        run: echo "No build needed for GitHub Actions analysis"
+        run: echo "No build required for GitHub Actions."
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
