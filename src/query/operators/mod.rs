@@ -173,7 +173,10 @@ impl DataBatch {
                 timestamps: self.timestamps[start..end].to_vec(),
                 values: self.values[start..end].to_vec(),
                 series_ids: self.series_ids.as_ref().map(|s| s[start..end].to_vec()),
-                validity: self.validity.as_ref().map(|v| slice_validity_bitmap(v, start, end)),
+                validity: self
+                    .validity
+                    .as_ref()
+                    .map(|v| slice_validity_bitmap(v, start, end)),
             };
             morsels.push(morsel);
             start = end;

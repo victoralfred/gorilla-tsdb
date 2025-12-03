@@ -23,8 +23,8 @@ use crate::query::ast::{AggregationFunction, Query, SeriesSelector};
 use crate::query::error::QueryError;
 use crate::query::executor::{ExecutionContext, ExecutorConfig};
 use crate::query::operators::{
-    AggregationOperator, DownsampleOperator, FilterOperator, LimitOperator, Operator,
-    ScanOperator, StorageScanOperator,
+    AggregationOperator, DownsampleOperator, FilterOperator, LimitOperator, Operator, ScanOperator,
+    StorageScanOperator,
 };
 use crate::query::planner::{LogicalPlan, QueryPlanner};
 use crate::query::result::{QueryResult, ResultRow};
