@@ -7,13 +7,10 @@
 //! - Batch formation with configurable size
 //! - Zone map filtering for chunk pruning
 //!
-//! # Storage Modes
+//! # Usage
 //!
-//! The scan operator can work in two modes:
-//! - **Mock mode**: Uses pre-loaded test data (for testing)
-//! - **Storage mode**: Reads from actual `TimeSeriesDB` storage (for production)
-//!
-//! To enable storage mode, use `ScanOperator::with_storage()`.
+//! Use `ScanOperator::with_storage()` to attach a `TimeSeriesDB` for
+//! production database access.
 
 use crate::engine::TimeSeriesDB;
 use crate::query::ast::{Predicate, SeriesSelector};
@@ -43,21 +40,21 @@ pub struct ScanOperator {
     /// Whether scan is complete
     exhausted: bool,
 
-    /// Mock data for testing purposes
-    /// Use `with_storage()` for production database access
-    mock_data: Option<Vec<(i64, f64, SeriesId)>>,
-
-    /// Optional storage reference for actual database access
-    /// When set, bypasses mock_data and reads from real storage
+    /// Storage reference for database access
     storage: Option<Arc<TimeSeriesDB>>,
 
     /// Cached data points from storage query (loaded on first next_batch call)
-    /// This avoids re-querying storage on each batch request
     cached_points: Option<Vec<DataPoint>>,
+
+    /// Test data (only available in test builds)
+    #[cfg(test)]
+    test_data: Option<Vec<(i64, f64, SeriesId)>>,
 }
 
 impl ScanOperator {
     /// Create a new scan operator
+    ///
+    /// For production use, call `with_storage()` to attach a database.
     pub fn new(selector: SeriesSelector, time_range: Option<TimeRange>) -> Self {
         Self {
             selector,
@@ -66,16 +63,17 @@ impl ScanOperator {
             batch_size: 4096,
             position: 0,
             exhausted: false,
-            mock_data: None,
             storage: None,
             cached_points: None,
+            #[cfg(test)]
+            test_data: None,
         }
     }
 
-    /// Attach storage backend for actual database access
+    /// Attach storage backend for database access
     ///
-    /// When storage is attached, the operator reads data from the
-    /// real database instead of using mock data.
+    /// This is the primary way to use ScanOperator in production.
+    /// The operator will query data from the database via TimeSeriesDB.
     ///
     /// # Arguments
     ///
@@ -97,20 +95,11 @@ impl ScanOperator {
         self
     }
 
-    /// Set mock data for testing
-    /// Uses SeriesId (u128) for consistency with types module (TYPE-001)
+    /// Set test data (only available in test builds)
     #[cfg(test)]
-    pub fn with_mock_data(mut self, data: Vec<(i64, f64, SeriesId)>) -> Self {
-        self.mock_data = Some(data);
+    pub fn with_test_data(mut self, data: Vec<(i64, f64, SeriesId)>) -> Self {
+        self.test_data = Some(data);
         self
-    }
-
-    /// Check if a data point passes the time range filter
-    fn passes_time_filter(&self, timestamp: i64) -> bool {
-        match &self.time_range {
-            Some(range) => timestamp >= range.start && timestamp <= range.end,
-            None => true,
-        }
     }
 
     /// Check if a data point passes the value predicate
@@ -121,11 +110,21 @@ impl ScanOperator {
         }
     }
 
-    /// Check if a series ID matches the selector
+    /// Check if a data point passes the time range filter (test builds only)
+    #[cfg(test)]
+    fn passes_time_filter(&self, timestamp: i64) -> bool {
+        match &self.time_range {
+            Some(range) => timestamp >= range.start && timestamp <= range.end,
+            None => true,
+        }
+    }
+
+    /// Check if a series ID matches the selector (test builds only)
+    #[cfg(test)]
     fn matches_selector(&self, series_id: SeriesId) -> bool {
         match self.selector.series_id {
-            Some(id) => id == series_id, // Both are SeriesId (u128) now (TYPE-001)
-            None => true,                // No specific series ID filter, match all
+            Some(id) => id == series_id,
+            None => true,
         }
     }
 
@@ -140,7 +139,6 @@ impl ScanOperator {
             Some(id) => vec![id],
             None => {
                 // If no specific series ID, use measurement-based lookup
-                // This requires async call to find_series
                 if let Some(ref measurement) = self.selector.measurement {
                     let tag_filter = self.selector.to_tag_filter();
                     let handle = tokio::runtime::Handle::try_current()
@@ -190,6 +188,99 @@ impl ScanOperator {
         self.cached_points = Some(all_points);
         Ok(())
     }
+
+    /// Process cached points and return next batch
+    fn process_cached_points(
+        &mut self,
+        ctx: &mut ExecutionContext,
+    ) -> Result<Option<DataBatch>, QueryError> {
+        let mut batch = DataBatch::with_capacity(self.batch_size);
+        let mut count = 0;
+
+        let points = self.cached_points.as_ref().unwrap();
+
+        while self.position < points.len() && count < self.batch_size {
+            let point = &points[self.position];
+            self.position += 1;
+
+            // Apply value predicate filter
+            if !self.passes_predicate(point.value) {
+                continue;
+            }
+
+            batch.push_with_series(point.timestamp, point.value, point.series_id);
+            count += 1;
+        }
+
+        if self.position >= points.len() {
+            self.exhausted = true;
+        }
+
+        if batch.is_empty() && self.exhausted {
+            return Ok(None);
+        }
+
+        // Track memory usage
+        let mem_size = batch.memory_size();
+        if !ctx.allocate_memory(mem_size) {
+            return Err(QueryError::resource_limit(
+                "Memory limit exceeded during scan",
+            ));
+        }
+
+        ctx.record_rows(batch.len());
+        Ok(Some(batch))
+    }
+
+    /// Process test data and return next batch (test builds only)
+    #[cfg(test)]
+    fn process_test_data(
+        &mut self,
+        ctx: &mut ExecutionContext,
+    ) -> Result<Option<DataBatch>, QueryError> {
+        let mut batch = DataBatch::with_capacity(self.batch_size);
+        let mut count = 0;
+
+        let data = self.test_data.as_ref().unwrap();
+
+        while self.position < data.len() && count < self.batch_size {
+            let (ts, val, sid) = data[self.position];
+            self.position += 1;
+
+            // Apply filters
+            if !self.passes_time_filter(ts) {
+                continue;
+            }
+            if !self.passes_predicate(val) {
+                continue;
+            }
+            if !self.matches_selector(sid) {
+                continue;
+            }
+
+            batch.push_with_series(ts, val, sid);
+            count += 1;
+        }
+
+        if self.position >= data.len() {
+            self.exhausted = true;
+        }
+
+        if batch.is_empty() && self.exhausted {
+            return Ok(None);
+        }
+
+        // Track memory usage
+        let mem_size = batch.memory_size();
+        if !ctx.allocate_memory(mem_size) {
+            return Err(QueryError::resource_limit(
+                "Memory limit exceeded during scan",
+            ));
+        }
+
+        ctx.record_rows(batch.len());
+        Ok(Some(batch))
+    }
 }
 
 impl Operator for ScanOperator {
@@ -206,106 +297,24 @@ impl Operator for ScanOperator {
             return Ok(None);
         }
 
-        // Check if we need to load data from storage (first call with storage attached)
+        // Load from storage if configured and not yet loaded
         if self.storage.is_some() && self.cached_points.is_none() {
             self.load_from_storage()?;
         }
 
-        // Determine data source and process
-        let has_cached = self.cached_points.is_some();
-        let has_mock = self.mock_data.is_some();
-
-        if has_cached {
-            // Process cached points from storage
-            let mut batch = DataBatch::with_capacity(self.batch_size);
-            let mut count = 0;
-
-            // Safe to unwrap since we checked is_some above
-            let points = self.cached_points.as_ref().unwrap();
-
-            while self.position < points.len() && count < self.batch_size {
-                let point = &points[self.position];
-                self.position += 1;
-
-                // Apply value predicate filter
-                if !self.passes_predicate(point.value) {
-                    continue;
-                }
-
-                batch.push_with_series(point.timestamp, point.value, point.series_id);
-                count += 1;
-            }
-
-            if self.position >= points.len() {
-                self.exhausted = true;
-            }
-
-            if batch.is_empty() && self.exhausted {
-                return Ok(None);
-            }
-
-            // Track memory usage
-            let mem_size = batch.memory_size();
-            if !ctx.allocate_memory(mem_size) {
-                return Err(QueryError::resource_limit(
-                    "Memory limit exceeded during scan",
-                ));
-            }
-
-            ctx.record_rows(batch.len());
-            return Ok(Some(batch));
+        // Process cached points from storage
+        if self.cached_points.is_some() {
+            return self.process_cached_points(ctx);
         }
 
-        if has_mock {
-            // Process mock data
-            let mut batch = DataBatch::with_capacity(self.batch_size);
-            let mut count = 0;
-
-            // Safe to unwrap since we checked is_some above
-            let data = self.mock_data.as_ref().unwrap();
-
-            while self.position < data.len() && count < self.batch_size {
-                let (ts, val, sid) = data[self.position];
-                self.position += 1;
-
-                // Apply filters
-                if !self.passes_time_filter(ts) {
-                    continue;
-                }
-                if !self.passes_predicate(val) {
-                    continue;
-                }
-                if !self.matches_selector(sid) {
-                    continue;
-                }
-
-                batch.push_with_series(ts, val, sid);
-                count += 1;
-            }
-
-            if self.position >= data.len() {
-                self.exhausted = true;
-            }
-
-            if batch.is_empty() && self.exhausted {
-                return Ok(None);
-            }
-
-            // Track memory usage
-            let mem_size = batch.memory_size();
-            if !ctx.allocate_memory(mem_size) {
-                return Err(QueryError::resource_limit(
-                    "Memory limit exceeded during scan",
-                ));
-            }
-
-            ctx.record_rows(batch.len());
-            return Ok(Some(batch));
+        // Process test data (test builds only)
+        #[cfg(test)]
+        if self.test_data.is_some() {
+            return self.process_test_data(ctx);
         }
 
-        // No data source configured - scan is empty
-        // NOTE: For production use with chunk-level storage access, use
-        // StorageScanOperator which integrates with LocalDiskEngine.
+        // No data source configured - requires storage to be attached
+        tracing::warn!("ScanOperator has no storage attached - returning empty result");
         self.exhausted = true;
         Ok(None)
     }
@@ -355,7 +364,7 @@ mod tests {
     #[test]
     fn test_scan_all_data() {
         let mut scan = ScanOperator::new(all_series(), None)
-            .with_mock_data(create_test_data())
+            .with_test_data(create_test_data())
             .with_batch_size(50);
 
         let config = ExecutorConfig::default();
@@ -385,7 +394,7 @@ mod tests {
                 end: 20000,
             }), // Only 10 points
         )
-        .with_mock_data(data);
+        .with_test_data(data);
 
         let config = ExecutorConfig::default();
         let mut ctx = ExecutionContext::new(&config);
@@ -399,7 +408,7 @@ mod tests {
         let data = create_test_data(); // values 0..99
 
         let mut scan = ScanOperator::new(all_series(), None)
-            .with_mock_data(data)
+            .with_test_data(data)
             .with_predicate(Predicate::gt("value", 50.0));
 
         let config = ExecutorConfig::default();
@@ -418,7 +427,7 @@ mod tests {
         // Add data from another series
         data.extend((0..50).map(|i| (i as i64 * 1000, i as f64, 2)));
 
-        let mut scan = ScanOperator::new(SeriesSelector::by_id(1), None).with_mock_data(data);
+        let mut scan = ScanOperator::new(SeriesSelector::by_id(1), None).with_test_data(data);
 
         let config = ExecutorConfig::default();
         let mut ctx = ExecutionContext::new(&config);
@@ -436,7 +445,7 @@ mod tests {
     #[test]
     fn test_scan_reset() {
         let mut scan = ScanOperator::new(all_series(), None)
-            .with_mock_data(create_test_data())
+            .with_test_data(create_test_data())
             .with_batch_size(100);
 
         let config = ExecutorConfig::default();
