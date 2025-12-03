@@ -43,8 +43,8 @@ pub struct ScanOperator {
     /// Whether scan is complete
     exhausted: bool,
 
-    /// Mock data for testing (will be replaced with actual storage access)
-    /// Uses SeriesId (u128) for consistency with types module (TYPE-001)
+    /// Mock data for testing purposes
+    /// Use `with_storage()` for production database access
     mock_data: Option<Vec<(i64, f64, SeriesId)>>,
 
     /// Optional storage reference for actual database access
