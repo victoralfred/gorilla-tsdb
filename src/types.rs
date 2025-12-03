@@ -555,8 +555,19 @@ pub enum TagFilter {
     /// (can have additional tags not in the filter)
     Exact(HashMap<String, String>),
 
-    /// Pattern matching (not yet implemented)
-    /// Future: Support wildcards like "host=web-*" or regex patterns
+    /// Pattern matching for tag values
+    ///
+    /// Supports two pattern formats:
+    /// - Glob patterns: `key=value*` (wildcards with `*`)
+    /// - Regex patterns: `key=regex:^value[0-9]+$`
+    ///
+    /// Multiple patterns can be separated by `,` (all must match)
+    ///
+    /// # Examples
+    ///
+    /// - `"host=web-*"` - Match hosts starting with "web-"
+    /// - `"host=regex:^web-[0-9]+$"` - Match hosts like web-1, web-2
+    /// - `"host=web-*,dc=us-*"` - Match both conditions
     Pattern(String),
 }
 
@@ -586,11 +597,64 @@ impl TagFilter {
                 filter_tags.iter().all(|(k, v)| tags.get(k) == Some(v))
             }
 
-            // Pattern matching not implemented yet
-            TagFilter::Pattern(_) => {
-                // TODO: Implement pattern matching (wildcards, regex)
-                false
+            // Pattern matching with glob wildcards or regex
+            TagFilter::Pattern(pattern) => {
+                // Parse pattern: "key=value_pattern,key2=value_pattern2"
+                for condition in pattern.split(',') {
+                    let condition = condition.trim();
+                    if condition.is_empty() {
+                        continue;
+                    }
+
+                    // Split into key=pattern
+                    let parts: Vec<&str> = condition.splitn(2, '=').collect();
+                    if parts.len() != 2 {
+                        return false; // Invalid pattern format
+                    }
+
+                    let key = parts[0].trim();
+                    let value_pattern = parts[1].trim();
+
+                    // Get the actual tag value
+                    let actual_value = match tags.get(key) {
+                        Some(v) => v,
+                        None => return false, // Tag doesn't exist
+                    };
+
+                    // Check if pattern matches
+                    if !Self::pattern_matches(value_pattern, actual_value) {
+                        return false;
+                    }
+                }
+                true
             }
+        }
+    }
+
+    /// Check if a pattern matches a value
+    ///
+    /// Supports:
+    /// - Glob patterns with `*` wildcard
+    /// - Regex patterns prefixed with `regex:`
+    fn pattern_matches(pattern: &str, value: &str) -> bool {
+        // Check for regex prefix
+        if let Some(regex_pattern) = pattern.strip_prefix("regex:") {
+            match regex::Regex::new(regex_pattern) {
+                Ok(re) => re.is_match(value),
+                Err(_) => false, // Invalid regex
+            }
+        } else if pattern.contains('*') {
+            // Glob pattern: convert * to regex .*
+            let escaped = regex::escape(pattern);
+            let regex_pattern = escaped.replace(r"\*", ".*");
+            let anchored = format!("^{}$", regex_pattern);
+            match regex::Regex::new(&anchored) {
+                Ok(re) => re.is_match(value),
+                Err(_) => false,
+            }
+        } else {
+            // Exact match (no wildcards)
+            pattern == value
         }
     }
 }
@@ -642,6 +706,79 @@ mod tests {
         let mut filter_tags = HashMap::new();
         filter_tags.insert("host".to_string(), "server2".to_string());
         let filter = TagFilter::Exact(filter_tags);
+        assert!(!filter.matches(&tags));
+    }
+
+    #[test]
+    fn test_tag_filter_pattern_glob() {
+        let mut tags = HashMap::new();
+        tags.insert("host".to_string(), "web-server-01".to_string());
+        tags.insert("dc".to_string(), "us-east-1".to_string());
+
+        // Glob pattern with prefix wildcard
+        let filter = TagFilter::Pattern("host=web-*".to_string());
+        assert!(filter.matches(&tags));
+
+        // Glob pattern with suffix wildcard
+        let filter = TagFilter::Pattern("host=*-01".to_string());
+        assert!(filter.matches(&tags));
+
+        // Glob pattern with both wildcards
+        let filter = TagFilter::Pattern("host=*server*".to_string());
+        assert!(filter.matches(&tags));
+
+        // Non-matching glob pattern
+        let filter = TagFilter::Pattern("host=db-*".to_string());
+        assert!(!filter.matches(&tags));
+
+        // Multiple conditions (all must match)
+        let filter = TagFilter::Pattern("host=web-*,dc=us-*".to_string());
+        assert!(filter.matches(&tags));
+
+        // Multiple conditions with one failing
+        let filter = TagFilter::Pattern("host=web-*,dc=eu-*".to_string());
+        assert!(!filter.matches(&tags));
+    }
+
+    #[test]
+    fn test_tag_filter_pattern_regex() {
+        let mut tags = HashMap::new();
+        tags.insert("host".to_string(), "web-42".to_string());
+        tags.insert("dc".to_string(), "us-east-1".to_string());
+
+        // Regex pattern
+        let filter = TagFilter::Pattern("host=regex:^web-[0-9]+$".to_string());
+        assert!(filter.matches(&tags));
+
+        // Regex with alternation
+        let filter = TagFilter::Pattern("dc=regex:^(us|eu)-.*$".to_string());
+        assert!(filter.matches(&tags));
+
+        // Non-matching regex
+        let filter = TagFilter::Pattern("host=regex:^db-[0-9]+$".to_string());
+        assert!(!filter.matches(&tags));
+    }
+
+    #[test]
+    fn test_tag_filter_pattern_exact() {
+        let mut tags = HashMap::new();
+        tags.insert("host".to_string(), "server1".to_string());
+
+        // Pattern without wildcards is exact match
+        let filter = TagFilter::Pattern("host=server1".to_string());
+        assert!(filter.matches(&tags));
+
+        let filter = TagFilter::Pattern("host=server2".to_string());
+        assert!(!filter.matches(&tags));
+    }
+
+    #[test]
+    fn test_tag_filter_pattern_missing_tag() {
+        let mut tags = HashMap::new();
+        tags.insert("host".to_string(), "server1".to_string());
+
+        // Pattern for non-existent tag
+        let filter = TagFilter::Pattern("dc=us-*".to_string());
         assert!(!filter.matches(&tags));
     }
 
