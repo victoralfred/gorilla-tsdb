@@ -51,8 +51,8 @@ use super::error::NetworkError;
 use super::rate_limit::RateLimiter;
 use super::tls::TlsConfig;
 use crate::ingestion::protocol::{
-    parsed_points_to_data_points, JsonParser, LineProtocolParser, ProtobufParser, Protocol,
-    ProtocolParser,
+    detect_protocol_with_hint, parsed_points_to_data_points, JsonParser, LineProtocolParser,
+    ProtobufParser, Protocol, ProtocolParser,
 };
 use crate::ingestion::IngestionPipeline;
 
@@ -430,13 +430,12 @@ async fn handle_write(
             .into_response();
     }
 
-    // Detect protocol from Content-Type header
+    // Detect protocol from Content-Type header with content-based fallback
     let content_type = headers
         .get(header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("text/plain");
+        .and_then(|v| v.to_str().ok());
 
-    let protocol = detect_protocol(content_type);
+    let protocol = detect_protocol_with_hint(content_type, &body);
 
     // Parse the data
     let result = match protocol {
@@ -488,22 +487,6 @@ async fn handle_write(
             warn!(protocol = %protocol, error = %e, "Parse error");
             (StatusCode::BAD_REQUEST, format!("Parse error: {}\n", e)).into_response()
         }
-    }
-}
-
-/// Detect protocol from Content-Type header
-fn detect_protocol(content_type: &str) -> Protocol {
-    let ct_lower = content_type.to_lowercase();
-
-    if ct_lower.contains("application/json") {
-        Protocol::Json
-    } else if ct_lower.contains("application/x-protobuf")
-        || ct_lower.contains("application/protobuf")
-    {
-        Protocol::Protobuf
-    } else {
-        // Default to line protocol for text/plain or unknown
-        Protocol::LineProtocol
     }
 }
 
@@ -695,90 +678,62 @@ mod tests {
     }
 
     // =========================================================================
-    // Protocol Detection Tests
+    // Protocol Detection Integration Tests
     // =========================================================================
+    // Note: Comprehensive detection tests are in ingestion::protocol::detect module.
+    // These tests verify integration with HTTP handler using detect_protocol_with_hint.
 
     #[test]
-    fn test_detect_protocol() {
-        assert_eq!(detect_protocol("text/plain"), Protocol::LineProtocol);
+    fn test_detect_protocol_with_content_type() {
+        // Line protocol data
+        let line_data = b"cpu,host=server01 value=42.0";
+
+        // Content-Type header takes precedence
         assert_eq!(
-            detect_protocol("text/plain; charset=utf-8"),
-            Protocol::LineProtocol
-        );
-        assert_eq!(detect_protocol("application/json"), Protocol::Json);
-        assert_eq!(
-            detect_protocol("application/json; charset=utf-8"),
+            detect_protocol_with_hint(Some("application/json"), line_data),
             Protocol::Json
         );
         assert_eq!(
-            detect_protocol("application/x-protobuf"),
+            detect_protocol_with_hint(Some("application/x-protobuf"), line_data),
             Protocol::Protobuf
         );
-        assert_eq!(detect_protocol("application/protobuf"), Protocol::Protobuf);
-        // Unknown defaults to line protocol
+
+        // text/plain falls back to content detection
         assert_eq!(
-            detect_protocol("application/octet-stream"),
+            detect_protocol_with_hint(Some("text/plain"), line_data),
             Protocol::LineProtocol
         );
+
+        // No Content-Type uses content detection
+        assert_eq!(
+            detect_protocol_with_hint(None, line_data),
+            Protocol::LineProtocol
+        );
+    }
+
+    #[test]
+    fn test_detect_protocol_json_content() {
+        let json_data = b"{\"measurement\": \"cpu\", \"value\": 42.0}";
+
+        // JSON detected from content when no explicit header
+        assert_eq!(detect_protocol_with_hint(None, json_data), Protocol::Json);
+
+        // JSON array
+        let json_array = b"[{\"measurement\": \"cpu\"}]";
+        assert_eq!(detect_protocol_with_hint(None, json_array), Protocol::Json);
     }
 
     #[test]
     fn test_detect_protocol_case_insensitive() {
-        assert_eq!(detect_protocol("APPLICATION/JSON"), Protocol::Json);
-        assert_eq!(detect_protocol("Application/Json"), Protocol::Json);
+        let data = b"cpu value=42.0";
         assert_eq!(
-            detect_protocol("APPLICATION/X-PROTOBUF"),
-            Protocol::Protobuf
-        );
-        assert_eq!(detect_protocol("TEXT/PLAIN"), Protocol::LineProtocol);
-    }
-
-    #[test]
-    fn test_detect_protocol_with_parameters() {
-        assert_eq!(
-            detect_protocol("application/json; charset=utf-8; boundary=something"),
+            detect_protocol_with_hint(Some("APPLICATION/JSON"), data),
             Protocol::Json
         );
         assert_eq!(
-            detect_protocol("application/x-protobuf; version=1"),
+            detect_protocol_with_hint(Some("Application/X-Protobuf"), data),
             Protocol::Protobuf
         );
-        assert_eq!(
-            detect_protocol("text/plain; format=fixed"),
-            Protocol::LineProtocol
-        );
-    }
-
-    #[test]
-    fn test_detect_protocol_empty_and_unknown() {
-        // Empty string defaults to line protocol
-        assert_eq!(detect_protocol(""), Protocol::LineProtocol);
-
-        // Unknown content types default to line protocol
-        assert_eq!(detect_protocol("video/mp4"), Protocol::LineProtocol);
-        assert_eq!(detect_protocol("image/png"), Protocol::LineProtocol);
-        assert_eq!(
-            detect_protocol("multipart/form-data"),
-            Protocol::LineProtocol
-        );
-    }
-
-    #[test]
-    fn test_detect_protocol_partial_matches() {
-        // Note: detect_protocol uses contains() so these will also match
-        // This documents the actual behavior (application/jsonl contains "application/json")
-        assert_eq!(detect_protocol("application/jsonl"), Protocol::Json);
-
-        // text/json doesn't contain "application/json" so it defaults to line protocol
-        assert_eq!(detect_protocol("text/json"), Protocol::LineProtocol);
-
-        // These should match
-        assert_eq!(detect_protocol("application/json"), Protocol::Json);
-        assert_eq!(
-            detect_protocol("application/x-protobuf"),
-            Protocol::Protobuf
-        );
-        assert_eq!(detect_protocol("application/protobuf"), Protocol::Protobuf);
     }
 
     // =========================================================================

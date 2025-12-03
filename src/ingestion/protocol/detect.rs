@@ -106,8 +106,7 @@ pub fn detect_protocol_with_hint(content_type: Option<&str>, data: &[u8]) -> Pro
             return Protocol::Json;
         }
 
-        if ct_lower.contains("application/x-protobuf")
-            || ct_lower.contains("application/protobuf")
+        if ct_lower.contains("application/x-protobuf") || ct_lower.contains("application/protobuf")
         {
             return Protocol::Protobuf;
         }
@@ -188,8 +187,8 @@ fn is_likely_protobuf(data: &[u8]) -> bool {
     }
 
     // Multi-byte varint length - check if it terminates properly
-    for i in 2..data.len().min(7) {
-        if data[i] & 0x80 == 0 {
+    for byte in data.iter().take(7).skip(2) {
+        if byte & 0x80 == 0 {
             return true;
         }
     }
@@ -216,10 +215,7 @@ mod tests {
         );
 
         // Without tags
-        assert_eq!(
-            detect_protocol(b"cpu value=42.0"),
-            Protocol::LineProtocol
-        );
+        assert_eq!(detect_protocol(b"cpu value=42.0"), Protocol::LineProtocol);
 
         // Multiple fields
         assert_eq!(
