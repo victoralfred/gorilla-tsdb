@@ -22,6 +22,7 @@ use axum::{
 use gorilla_tsdb::cache::InvalidationPublisher;
 use gorilla_tsdb::cache::SharedQueryCache;
 use gorilla_tsdb::engine::TimeSeriesDB;
+use gorilla_tsdb::ingestion::schema::sanitize_tags_for_redis;
 use gorilla_tsdb::query::ast::{Query as AstQuery, SelectQuery, SeriesSelector};
 use gorilla_tsdb::query::result::QueryResult;
 use gorilla_tsdb::query::subscription::SubscriptionManager;
@@ -285,21 +286,27 @@ pub async fn write_points(
         );
     }
 
+    // Sanitize tags to prevent Redis key injection attacks.
+    // Tags are used in Redis key construction (e.g., ts:tag:{key}:{value}:series),
+    // so colons, newlines, and other special characters must be removed/replaced.
+    let sanitized_tags = sanitize_tags_for_redis(&req.tags);
+
     // Determine series ID
     let series_id = match req.series_id {
         Some(id) => id,
         None => {
             match &req.metric {
                 Some(metric) => {
-                    let id = generate_series_id(metric, &req.tags);
+                    // Use sanitized tags for series ID generation for consistency
+                    let id = generate_series_id(metric, &sanitized_tags);
 
-                    // Auto-register the series
+                    // Auto-register the series with sanitized tags
                     if let Err(e) = state
                         .storage
                         .register_series_metadata(
                             id,
                             metric,
-                            req.tags.clone(),
+                            sanitized_tags.clone(),
                             state.config.retention_days,
                         )
                         .await
@@ -307,7 +314,11 @@ pub async fn write_points(
                         warn!(error = %e, metric = %metric, "Series metadata persistence");
                     }
 
-                    if let Err(e) = state.db.register_series(id, metric, req.tags.clone()).await {
+                    if let Err(e) = state
+                        .db
+                        .register_series(id, metric, sanitized_tags.clone())
+                        .await
+                    {
                         warn!(error = %e, metric = %metric, "Series index registration");
                     }
 
@@ -343,10 +354,10 @@ pub async fn write_points(
             state.query_cache.invalidate_series(series_id);
 
             // Publish invalidation event to Redis for cross-node cache coherence
+            // Use sanitized tags for consistency with what was stored
             if let Some(ref publisher) = state.invalidation_publisher {
                 let metric = req.metric.as_deref().unwrap_or("unknown");
-                let tags: Vec<String> = req
-                    .tags
+                let tags: Vec<String> = sanitized_tags
                     .iter()
                     .map(|(k, v)| format!("{}:{}", k, v))
                     .collect();
@@ -720,17 +731,23 @@ pub async fn register_series(
     State(state): State<Arc<AppState>>,
     Json(req): Json<RegisterSeriesRequest>,
 ) -> impl IntoResponse {
+    // Sanitize tags to prevent Redis key injection attacks.
+    // Tags are used in Redis key construction (e.g., ts:tag:{key}:{value}:series),
+    // so colons, newlines, and other special characters must be removed/replaced.
+    let sanitized_tags = sanitize_tags_for_redis(&req.tags);
+
+    // Use sanitized tags for series ID generation for consistency
     let series_id = req
         .series_id
-        .unwrap_or_else(|| generate_series_id(&req.metric_name, &req.tags));
+        .unwrap_or_else(|| generate_series_id(&req.metric_name, &sanitized_tags));
 
-    // Persist to storage
+    // Persist to storage with sanitized tags
     if let Err(e) = state
         .storage
         .register_series_metadata(
             series_id,
             &req.metric_name,
-            req.tags.clone(),
+            sanitized_tags.clone(),
             state.config.retention_days,
         )
         .await
@@ -740,7 +757,7 @@ pub async fn register_series(
 
     match state
         .db
-        .register_series(series_id, &req.metric_name, req.tags)
+        .register_series(series_id, &req.metric_name, sanitized_tags)
         .await
     {
         Ok(()) => {

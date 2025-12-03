@@ -427,7 +427,7 @@ pub fn generate_series_id(metric_name: &str, tags: &HashMap<String, String>) -> 
 
 /// Generate series ID from Cow strings (for ParsedPoint compatibility)
 ///
-/// Same as `generate_series_id` but accepts Cow<str> references.
+/// Same as `generate_series_id` but accepts `Cow<str>` references.
 pub fn generate_series_id_cow<'a>(
     metric_name: &str,
     tags: &HashMap<Cow<'a, str>, Cow<'a, str>>,
