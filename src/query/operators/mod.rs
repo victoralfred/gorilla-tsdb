@@ -12,6 +12,7 @@
 pub mod aggregation;
 pub mod downsample;
 pub mod filter;
+pub mod limit;
 pub mod parallel;
 pub mod scan;
 pub mod storage_scan;
@@ -20,6 +21,7 @@ pub mod storage_scan;
 pub use aggregation::{AggregationOperator, AggregationState};
 pub use downsample::DownsampleOperator;
 pub use filter::FilterOperator;
+pub use limit::LimitOperator;
 pub use parallel::{ParallelAggregator, ParallelConfig, ParallelScanner};
 pub use scan::ScanOperator;
 pub use storage_scan::{StorageQueryExt, StorageScanOperator};
@@ -196,7 +198,7 @@ impl DataBatch {
 /// # Returns
 ///
 /// A new bitmap containing only the validity bits for the range
-fn slice_validity_bitmap(bitmap: &[u8], start: usize, end: usize) -> Vec<u8> {
+pub fn slice_validity_bitmap(bitmap: &[u8], start: usize, end: usize) -> Vec<u8> {
     let count = end - start;
     if count == 0 {
         return Vec::new();
