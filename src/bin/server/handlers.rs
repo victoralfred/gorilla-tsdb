@@ -27,7 +27,7 @@ use gorilla_tsdb::query::ast::{Query as AstQuery, SelectQuery, SeriesSelector};
 use gorilla_tsdb::query::result::QueryResult;
 use gorilla_tsdb::query::subscription::SubscriptionManager;
 use gorilla_tsdb::storage::LocalDiskEngine;
-use gorilla_tsdb::types::{DataPoint, SeriesId, TagFilter, TimeRange};
+use gorilla_tsdb::types::{generate_series_id, DataPoint, SeriesId, TagFilter, TimeRange};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -54,27 +54,6 @@ pub struct AppState {
     /// Optional Pub/Sub publisher for cross-node cache invalidation
     /// Present when Redis is enabled and Pub/Sub setup succeeds
     pub invalidation_publisher: Option<InvalidationPublisher>,
-}
-
-// =============================================================================
-// Helper Functions
-// =============================================================================
-
-/// Generate a deterministic series ID from metric name and tags
-pub fn generate_series_id(metric: &str, tags: &HashMap<String, String>) -> SeriesId {
-    use std::collections::BTreeMap;
-    use std::hash::{Hash, Hasher};
-
-    let sorted_tags: BTreeMap<_, _> = tags.iter().collect();
-
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    metric.hash(&mut hasher);
-    for (k, v) in sorted_tags {
-        k.hash(&mut hasher);
-        v.hash(&mut hasher);
-    }
-
-    hasher.finish() as SeriesId
 }
 
 // =============================================================================

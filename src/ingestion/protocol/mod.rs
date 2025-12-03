@@ -62,10 +62,9 @@ pub use protobuf::{Label, ProtobufParser, Sample, TimeSeries, WriteRequest};
 // (ParsedPoint, OwnedParsedPoint, FieldValue, Protocol, ProtocolParser are already public)
 
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap};
-use std::hash::{Hash, Hasher};
+use std::collections::HashMap;
 
-use crate::types::{DataPoint, SeriesId};
+use crate::types::{generate_series_id, DataPoint};
 
 /// Owned version of ParsedPoint (for when data needs to outlive input buffer)
 #[derive(Debug, Clone, PartialEq)]
@@ -393,57 +392,8 @@ impl std::fmt::Display for Protocol {
 }
 
 // =============================================================================
-// Series ID Generation and Point Conversion
+// Point Conversion Utilities
 // =============================================================================
-
-/// Generate a deterministic series ID from metric name and tags
-///
-/// Uses a hash of the metric name and sorted tags to generate a consistent
-/// series ID. This allows the same series to always map to the same ID
-/// regardless of tag insertion order.
-///
-/// # Arguments
-///
-/// * `metric_name` - The measurement/metric name
-/// * `tags` - Tag key-value pairs
-///
-/// # Returns
-///
-/// A deterministic 64-bit series ID
-pub fn generate_series_id(metric_name: &str, tags: &HashMap<String, String>) -> SeriesId {
-    // Sort tags for deterministic hashing
-    let sorted_tags: BTreeMap<_, _> = tags.iter().collect();
-
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    metric_name.hash(&mut hasher);
-
-    for (key, value) in sorted_tags {
-        key.hash(&mut hasher);
-        value.hash(&mut hasher);
-    }
-
-    hasher.finish() as SeriesId
-}
-
-/// Generate series ID from Cow strings (for ParsedPoint compatibility)
-///
-/// Same as `generate_series_id` but accepts `Cow<str>` references.
-pub fn generate_series_id_cow<'a>(
-    metric_name: &str,
-    tags: &HashMap<Cow<'a, str>, Cow<'a, str>>,
-) -> SeriesId {
-    let sorted_tags: BTreeMap<_, _> = tags.iter().collect();
-
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    metric_name.hash(&mut hasher);
-
-    for (key, value) in sorted_tags {
-        key.as_ref().hash(&mut hasher);
-        value.as_ref().hash(&mut hasher);
-    }
-
-    hasher.finish() as SeriesId
-}
 
 /// Convert a ParsedPoint to DataPoints
 ///

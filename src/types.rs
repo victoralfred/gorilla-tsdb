@@ -47,6 +47,78 @@ use std::fmt;
 /// ```
 pub type SeriesId = u128;
 
+/// Generate a deterministic series ID from metric name and tags
+///
+/// This is the canonical function for generating series IDs. Uses a hash of
+/// the metric name and sorted tags to generate a consistent series ID.
+/// The same metric + tags combination will always produce the same ID,
+/// regardless of tag insertion order.
+///
+/// # Arguments
+///
+/// * `metric_name` - The measurement/metric name
+/// * `tags` - Tag key-value pairs
+///
+/// # Returns
+///
+/// A deterministic 128-bit series ID
+///
+/// # Example
+///
+/// ```rust
+/// use gorilla_tsdb::types::generate_series_id;
+/// use std::collections::HashMap;
+///
+/// let mut tags = HashMap::new();
+/// tags.insert("host".to_string(), "server1".to_string());
+/// tags.insert("region".to_string(), "us-east".to_string());
+///
+/// let id = generate_series_id("cpu.usage", &tags);
+/// ```
+pub fn generate_series_id(metric_name: &str, tags: &HashMap<String, String>) -> SeriesId {
+    use std::collections::BTreeMap;
+    use std::hash::{Hash, Hasher};
+
+    // Sort tags for deterministic hashing
+    let sorted_tags: BTreeMap<_, _> = tags.iter().collect();
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    metric_name.hash(&mut hasher);
+
+    for (key, value) in sorted_tags {
+        key.hash(&mut hasher);
+        value.hash(&mut hasher);
+    }
+
+    // Use the full 64-bit hash as the series ID
+    // Cast to u128 for SeriesId type compatibility
+    hasher.finish() as SeriesId
+}
+
+/// Generate series ID from Cow strings (for ParsedPoint compatibility)
+///
+/// Same as `generate_series_id` but accepts `Cow<str>` references for
+/// zero-copy parsing scenarios.
+pub fn generate_series_id_cow<'a>(
+    metric_name: &str,
+    tags: &HashMap<std::borrow::Cow<'a, str>, std::borrow::Cow<'a, str>>,
+) -> SeriesId {
+    use std::collections::BTreeMap;
+    use std::hash::{Hash, Hasher};
+
+    let sorted_tags: BTreeMap<_, _> = tags.iter().collect();
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    metric_name.hash(&mut hasher);
+
+    for (key, value) in sorted_tags {
+        key.as_ref().hash(&mut hasher);
+        value.as_ref().hash(&mut hasher);
+    }
+
+    hasher.finish() as SeriesId
+}
+
 /// Unique identifier for a compressed chunk
 ///
 /// Each compressed data block is assigned a unique UUID-based identifier. This allows

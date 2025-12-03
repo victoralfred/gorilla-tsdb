@@ -593,13 +593,19 @@ mod tests {
         // Colons are replaced to prevent key injection
         assert_eq!(sanitize_for_redis_key("host:port"), "host_port");
         assert_eq!(sanitize_for_redis_key("ts:admin:root"), "ts_admin_root");
-        assert_eq!(sanitize_for_redis_key("::multiple::colons::"), "__multiple__colons__");
+        assert_eq!(
+            sanitize_for_redis_key("::multiple::colons::"),
+            "__multiple__colons__"
+        );
     }
 
     #[test]
     fn test_sanitize_for_redis_key_newline_injection() {
         // Newlines are replaced to prevent protocol issues
-        assert_eq!(sanitize_for_redis_key("value\nmalicious"), "value_malicious");
+        assert_eq!(
+            sanitize_for_redis_key("value\nmalicious"),
+            "value_malicious"
+        );
         assert_eq!(sanitize_for_redis_key("value\r\nwindows"), "value__windows");
     }
 
