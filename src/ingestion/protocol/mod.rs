@@ -495,6 +495,39 @@ pub fn parsed_point_to_data_points(
     data_points
 }
 
+/// Get current time as nanoseconds since Unix epoch
+///
+/// This is used as the default timestamp when ParsedPoints don't have one.
+#[inline]
+pub fn current_timestamp_ns() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as i64
+}
+
+/// Convert a batch of ParsedPoints to DataPoints
+///
+/// Convenience function that converts multiple ParsedPoints at once,
+/// using the current system time as the default timestamp for any
+/// points that don't have an explicit timestamp.
+///
+/// # Arguments
+///
+/// * `points` - Slice of ParsedPoints to convert
+///
+/// # Returns
+///
+/// Vector of DataPoints, with multiple DataPoints per ParsedPoint if
+/// the original point had multiple numeric fields.
+pub fn parsed_points_to_data_points(points: &[ParsedPoint<'_>]) -> Vec<DataPoint> {
+    let now_ns = current_timestamp_ns();
+    points
+        .iter()
+        .flat_map(|p| parsed_point_to_data_points(p, now_ns))
+        .collect()
+}
+
 /// Convert an OwnedParsedPoint to DataPoints
 ///
 /// Same as `parsed_point_to_data_points` but for owned points.

@@ -30,7 +30,8 @@ use tracing::{debug, error, trace, warn};
 
 use super::error::NetworkError;
 use super::rate_limit::RateLimiter;
-use crate::ingestion::protocol::{LineProtocolParser, ProtocolParser};
+use crate::ingestion::protocol::{parsed_points_to_data_points, LineProtocolParser, ProtocolParser};
+use crate::ingestion::IngestionPipeline;
 
 /// UDP listener for receiving datagrams
 ///
@@ -58,6 +59,9 @@ pub struct UdpListener {
     buffer_size: usize,
     /// Statistics
     stats: UdpStats,
+    /// Optional ingestion pipeline for data persistence
+    /// When None, parsed points are logged but not persisted
+    ingestion_pipeline: Option<Arc<IngestionPipeline>>,
 }
 
 /// UDP listener statistics
@@ -177,7 +181,18 @@ impl UdpListener {
             local_addr,
             buffer_size,
             stats: UdpStats::default(),
+            ingestion_pipeline: None,
         })
+    }
+
+    /// Attach an ingestion pipeline for data persistence
+    ///
+    /// When a pipeline is attached, parsed points are converted to DataPoints
+    /// and sent through the pipeline for storage. Without a pipeline,
+    /// points are only logged for debugging.
+    pub fn with_ingestion_pipeline(mut self, pipeline: Arc<IngestionPipeline>) -> Self {
+        self.ingestion_pipeline = Some(pipeline);
+        self
     }
 
     /// Set the socket receive buffer size
@@ -319,7 +334,7 @@ impl UdpListener {
 
     /// Handle a received datagram
     ///
-    /// Applies rate limiting and forwards to processing pipeline.
+    /// Applies rate limiting, parses, converts, and forwards to ingestion pipeline.
     async fn handle_datagram(&self, data: &[u8], src_addr: SocketAddr, rate_limiter: &RateLimiter) {
         let len = data.len();
 
@@ -351,8 +366,8 @@ impl UdpListener {
         let parser = LineProtocolParser::new();
 
         match parser.parse(data) {
-            Ok(points) => {
-                let point_count = points.len();
+            Ok(parsed_points) => {
+                let point_count = parsed_points.len();
                 trace!(
                     src = %src_addr,
                     bytes = len,
@@ -361,17 +376,43 @@ impl UdpListener {
                     point_count
                 );
 
-                // TODO: Send parsed points to ingestion pipeline (WAL -> Storage)
-                // Currently just logging for verification
-                for point in &points {
-                    trace!(
-                        src = %src_addr,
-                        measurement = %point.measurement,
-                        tags = ?point.tags.len(),
-                        fields = ?point.fields.len(),
-                        timestamp = ?point.timestamp,
-                        "UDP parsed point"
-                    );
+                // Convert ParsedPoints to DataPoints and send to pipeline
+                if let Some(ref pipe) = self.ingestion_pipeline {
+                    // Convert all parsed points to DataPoints
+                    let data_points = parsed_points_to_data_points(&parsed_points);
+                    let data_point_count = data_points.len();
+
+                    // Send to ingestion pipeline
+                    if !data_points.is_empty() {
+                        match pipe.ingest_batch(data_points).await {
+                            Ok(()) => {
+                                trace!(
+                                    src = %src_addr,
+                                    data_points = data_point_count,
+                                    "Ingested UDP points to pipeline"
+                                );
+                            }
+                            Err(e) => {
+                                warn!(
+                                    src = %src_addr,
+                                    error = %e,
+                                    "Failed to ingest UDP points"
+                                );
+                            }
+                        }
+                    }
+                } else {
+                    // No pipeline - just log for debugging
+                    for point in &parsed_points {
+                        trace!(
+                            src = %src_addr,
+                            measurement = %point.measurement,
+                            tags = ?point.tags.len(),
+                            fields = ?point.fields.len(),
+                            timestamp = ?point.timestamp,
+                            "UDP parsed point (no pipeline attached)"
+                        );
+                    }
                 }
             }
             Err(e) => {
