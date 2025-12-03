@@ -24,7 +24,7 @@ use crate::query::error::QueryError;
 use crate::query::executor::{ExecutionContext, ExecutorConfig};
 use crate::query::operators::{
     AggregationOperator, DownsampleOperator, FilterOperator, LimitOperator, Operator, ScanOperator,
-    StorageScanOperator,
+    SortOperator, StorageScanOperator,
 };
 use crate::query::planner::{LogicalPlan, QueryPlanner};
 use crate::query::result::{QueryResult, ResultRow};
@@ -283,10 +283,10 @@ impl QueryEngine {
                 )))
             }
 
-            // Sort - for now, data is already sorted by timestamp
-            LogicalPlan::Sort { input, order_by: _ } => {
-                // TODO: Implement proper sort operator
-                self.build_operator_tree(input).await
+            // Sort - wrap upstream operator with SortOperator
+            LogicalPlan::Sort { input, order_by } => {
+                let upstream = self.build_operator_tree(input).await?;
+                Ok(Box::new(SortOperator::new(upstream, order_by.clone())))
             }
 
             // Limit - wrap upstream operator with LimitOperator

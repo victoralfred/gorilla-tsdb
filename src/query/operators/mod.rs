@@ -15,6 +15,7 @@ pub mod filter;
 pub mod limit;
 pub mod parallel;
 pub mod scan;
+pub mod sort;
 pub mod storage_scan;
 
 // Re-export commonly used types
@@ -24,6 +25,7 @@ pub use filter::FilterOperator;
 pub use limit::LimitOperator;
 pub use parallel::{ParallelAggregator, ParallelConfig, ParallelScanner};
 pub use scan::ScanOperator;
+pub use sort::SortOperator;
 pub use storage_scan::{StorageQueryExt, StorageScanOperator};
 
 use crate::query::error::QueryError;
