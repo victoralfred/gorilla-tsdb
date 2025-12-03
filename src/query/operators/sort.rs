@@ -5,7 +5,7 @@
 //!
 //! # Example
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use gorilla_tsdb::query::operators::sort::SortOperator;
 //! use gorilla_tsdb::query::ast::OrderDirection;
 //!

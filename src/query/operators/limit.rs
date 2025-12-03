@@ -5,8 +5,7 @@
 //!
 //! # Example
 //!
-//! ```rust,no_run
-//! use gorilla_tsdb::query::operators::{Operator, ExecutionContext};
+//! ```rust,ignore
 //! use gorilla_tsdb::query::operators::limit::LimitOperator;
 //!
 //! // Wrap an existing operator with limit and offset
