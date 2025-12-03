@@ -28,7 +28,7 @@
 
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use axum::{
     body::Body,
@@ -104,6 +104,10 @@ pub struct AppState {
     json_parser: JsonParser,
     /// Protobuf parser instance
     protobuf_parser: ProtobufParser,
+    /// Server start time for uptime tracking
+    start_time: Instant,
+    /// Ready flag - set to true once server initialization is complete
+    ready: Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// HTTP listener for REST API ingestion
@@ -155,6 +159,8 @@ impl HttpListener {
             line_parser: LineProtocolParser::new(),
             json_parser: JsonParser::new(),
             protobuf_parser: ProtobufParser::new(),
+            start_time: Instant::now(),
+            ready: Arc::new(std::sync::atomic::AtomicBool::new(true)),
         };
 
         Ok(Self {
@@ -175,6 +181,23 @@ impl HttpListener {
     pub fn with_shutdown(mut self, shutdown_rx: broadcast::Receiver<()>) -> Self {
         self.shutdown_rx = Some(shutdown_rx);
         self
+    }
+
+    /// Get a handle to the ready flag
+    ///
+    /// This can be used by other subsystems to signal when they are ready.
+    /// The ready endpoint (`/ready`) will return 503 until this flag is set to true.
+    pub fn ready_flag(&self) -> Arc<std::sync::atomic::AtomicBool> {
+        Arc::clone(&self.state.ready)
+    }
+
+    /// Set the ready state
+    ///
+    /// When set to true, the `/ready` endpoint returns 200.
+    /// When set to false, it returns 503.
+    pub fn set_ready(&self, ready: bool) {
+        use std::sync::atomic::Ordering;
+        self.state.ready.store(ready, Ordering::Release);
     }
 
     /// Run the HTTP listener
@@ -449,12 +472,13 @@ async fn handle_ping() -> Response {
 
 /// Health endpoint handler
 ///
-/// Returns detailed health status in JSON format
-async fn handle_health() -> Response {
+/// Returns detailed health status in JSON format including uptime
+async fn handle_health(State(state): State<AppState>) -> Response {
+    let uptime_seconds = state.start_time.elapsed().as_secs();
     let health = serde_json::json!({
         "status": "healthy",
         "version": env!("CARGO_PKG_VERSION"),
-        "uptime_seconds": 0, // TODO: Track actual uptime
+        "uptime_seconds": uptime_seconds,
     });
 
     (StatusCode::OK, axum::Json(health)).into_response()
@@ -462,10 +486,16 @@ async fn handle_health() -> Response {
 
 /// Ready endpoint handler
 ///
-/// Returns 200 if the server is ready to accept traffic
-async fn handle_ready() -> Response {
-    // TODO: Check if all subsystems are ready
-    (StatusCode::OK, "ready\n").into_response()
+/// Returns 200 if the server is ready to accept traffic, 503 otherwise.
+/// The ready flag can be controlled via `AppState::ready` to signal
+/// when subsystems are initialized and ready to serve traffic.
+async fn handle_ready(State(state): State<AppState>) -> Response {
+    use std::sync::atomic::Ordering;
+    if state.ready.load(Ordering::Acquire) {
+        (StatusCode::OK, "ready\n").into_response()
+    } else {
+        (StatusCode::SERVICE_UNAVAILABLE, "not ready\n").into_response()
+    }
 }
 
 /// Metrics endpoint handler (placeholder)
@@ -812,6 +842,8 @@ mod tests {
             line_parser: LineProtocolParser::new(),
             json_parser: JsonParser::new(),
             protobuf_parser: ProtobufParser::new(),
+            start_time: Instant::now(),
+            ready: Arc::new(std::sync::atomic::AtomicBool::new(true)),
         };
 
         // AppState should be Clone
