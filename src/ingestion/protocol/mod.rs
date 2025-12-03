@@ -64,7 +64,7 @@ pub use protobuf::{Label, ProtobufParser, Sample, TimeSeries, WriteRequest};
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use crate::types::{generate_series_id, DataPoint};
+use crate::types::{current_time_ns, generate_series_id, DataPoint};
 
 /// Owned version of ParsedPoint (for when data needs to outlive input buffer)
 #[derive(Debug, Clone, PartialEq)]
@@ -445,17 +445,6 @@ pub fn parsed_point_to_data_points(
     data_points
 }
 
-/// Get current time as nanoseconds since Unix epoch
-///
-/// This is used as the default timestamp when ParsedPoints don't have one.
-#[inline]
-pub fn current_timestamp_ns() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos() as i64
-}
-
 /// Convert a batch of ParsedPoints to DataPoints
 ///
 /// Convenience function that converts multiple ParsedPoints at once,
@@ -471,7 +460,7 @@ pub fn current_timestamp_ns() -> i64 {
 /// Vector of DataPoints, with multiple DataPoints per ParsedPoint if
 /// the original point had multiple numeric fields.
 pub fn parsed_points_to_data_points(points: &[ParsedPoint<'_>]) -> Vec<DataPoint> {
-    let now_ns = current_timestamp_ns();
+    let now_ns = current_time_ns();
     points
         .iter()
         .flat_map(|p| parsed_point_to_data_points(p, now_ns))

@@ -119,6 +119,52 @@ pub fn generate_series_id_cow<'a>(
     hasher.finish() as SeriesId
 }
 
+// =============================================================================
+// Timestamp Utilities
+// =============================================================================
+
+/// Get current time as milliseconds since Unix epoch
+///
+/// This is the canonical function for getting current time in milliseconds.
+/// Use this for timestamp comparisons and time-based calculations.
+///
+/// # Example
+///
+/// ```rust
+/// use gorilla_tsdb::types::current_time_ms;
+///
+/// let now = current_time_ms();
+/// assert!(now > 0);
+/// ```
+#[inline]
+pub fn current_time_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64
+}
+
+/// Get current time as nanoseconds since Unix epoch
+///
+/// This is the canonical function for getting current time in nanoseconds.
+/// Use this for high-precision timestamps (e.g., ingestion timestamps).
+///
+/// # Example
+///
+/// ```rust
+/// use gorilla_tsdb::types::current_time_ns;
+///
+/// let now = current_time_ns();
+/// assert!(now > 0);
+/// ```
+#[inline]
+pub fn current_time_ns() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as i64
+}
+
 /// Unique identifier for a compressed chunk
 ///
 /// Each compressed data block is assigned a unique UUID-based identifier. This allows

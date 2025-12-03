@@ -51,8 +51,10 @@ use super::error::NetworkError;
 use super::rate_limit::RateLimiter;
 use super::tls::TlsConfig;
 use crate::ingestion::protocol::{
-    JsonParser, LineProtocolParser, ProtobufParser, Protocol, ProtocolParser,
+    parsed_points_to_data_points, JsonParser, LineProtocolParser, ProtobufParser, Protocol,
+    ProtocolParser,
 };
+use crate::ingestion::IngestionPipeline;
 
 /// HTTP listener configuration
 #[derive(Debug, Clone)]
@@ -108,6 +110,8 @@ pub struct AppState {
     start_time: Instant,
     /// Ready flag - set to true once server initialization is complete
     ready: Arc<std::sync::atomic::AtomicBool>,
+    /// Optional ingestion pipeline for data persistence
+    ingestion_pipeline: Option<Arc<IngestionPipeline>>,
 }
 
 /// HTTP listener for REST API ingestion
@@ -161,6 +165,7 @@ impl HttpListener {
             protobuf_parser: ProtobufParser::new(),
             start_time: Instant::now(),
             ready: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            ingestion_pipeline: None,
         };
 
         Ok(Self {
@@ -180,6 +185,16 @@ impl HttpListener {
     /// Set the shutdown receiver for graceful shutdown
     pub fn with_shutdown(mut self, shutdown_rx: broadcast::Receiver<()>) -> Self {
         self.shutdown_rx = Some(shutdown_rx);
+        self
+    }
+
+    /// Attach an ingestion pipeline for data persistence
+    ///
+    /// When a pipeline is attached, parsed points are converted to DataPoints
+    /// and sent through the pipeline for storage. Without a pipeline,
+    /// points are only logged for debugging.
+    pub fn with_ingestion_pipeline(mut self, pipeline: Arc<IngestionPipeline>) -> Self {
+        self.state.ingestion_pipeline = Some(pipeline);
         self
     }
 
@@ -431,12 +446,41 @@ async fn handle_write(
     };
 
     match result {
-        Ok(points) => {
-            let count = points.len();
-            debug!(protocol = %protocol, points = count, "Parsed data points");
+        Ok(parsed_points) => {
+            let parsed_count = parsed_points.len();
+            debug!(protocol = %protocol, points = parsed_count, "Parsed data points");
 
-            // TODO: Send points to ingestion pipeline
-            // For now, just return success with count
+            // Convert ParsedPoints to DataPoints and send to pipeline
+            if let Some(ref pipeline) = state.ingestion_pipeline {
+                let data_points = parsed_points_to_data_points(&parsed_points);
+                let data_point_count = data_points.len();
+
+                if !data_points.is_empty() {
+                    match pipeline.ingest_batch(data_points).await {
+                        Ok(()) => {
+                            debug!(
+                                protocol = %protocol,
+                                parsed = parsed_count,
+                                data_points = data_point_count,
+                                "Ingested points to pipeline"
+                            );
+                        }
+                        Err(e) => {
+                            warn!(
+                                protocol = %protocol,
+                                error = %e,
+                                "Failed to ingest points to pipeline"
+                            );
+                            // Return 500 on pipeline failure
+                            return (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                format!("Ingestion failed: {}\n", e),
+                            )
+                                .into_response();
+                        }
+                    }
+                }
+            }
 
             (StatusCode::NO_CONTENT, "").into_response()
         }
@@ -844,6 +888,7 @@ mod tests {
             protobuf_parser: ProtobufParser::new(),
             start_time: Instant::now(),
             ready: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            ingestion_pipeline: None,
         };
 
         // AppState should be Clone

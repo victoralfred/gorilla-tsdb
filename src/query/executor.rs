@@ -525,7 +525,8 @@ impl ExecutionStats {
         if self.total_queries == 0 {
             Duration::ZERO
         } else {
-            self.total_execution_time / self.total_queries as u32
+            // EDGE-005: Cap at u32::MAX to prevent truncation after 4 billion queries
+            self.total_execution_time / self.total_queries.min(u32::MAX as u64) as u32
         }
     }
 
