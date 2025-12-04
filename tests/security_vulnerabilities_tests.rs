@@ -123,7 +123,11 @@ fn test_sv1_6_valid_paths_accepted() {
     // Valid path with subdirectories
     let nested_path = nested_dir.join("chunk_456.kub");
     let result = security::validate_chunk_path(&nested_path);
-    assert!(result.is_ok(), "Should accept valid nested path: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "Should accept valid nested path: {:?}",
+        result
+    );
 }
 
 /// SV-1.7: Test invalid file extensions are rejected
