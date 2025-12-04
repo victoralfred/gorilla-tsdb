@@ -191,6 +191,8 @@ impl LocalDiskEngine {
             CompressionType::Kuba => "kub",
             CompressionType::Snappy => "snappy",
             CompressionType::KubaSnappy => "kub.snappy",
+            CompressionType::Ahpac => "ahpac",
+            CompressionType::AhpacSnappy => "ahpac.snappy",
         };
 
         self.series_path(series_id)
@@ -549,11 +551,17 @@ impl StorageEngine for LocalDiskEngine {
         use crate::storage::chunk::ChunkHeader;
         use tokio::io::AsyncWriteExt;
 
+        // Determine compression type from algorithm_id
+        let compression_type = match data.algorithm_id.to_lowercase().as_str() {
+            "ahpac" => CompressionType::Ahpac,
+            _ => CompressionType::Kuba,
+        };
+
         // Create series directory if needed
         let series_dir = self.series_path(series_id);
         fs::create_dir_all(&series_dir).await?;
 
-        // Determine chunk path
+        // Determine chunk path (use .kub extension for all, type is in header)
         let path = self.chunk_path(series_id, &chunk_id, CompressionType::Kuba);
 
         // Create chunk header
@@ -564,7 +572,7 @@ impl StorageEngine for LocalDiskEngine {
         header.compressed_size = data.compressed_size as u32;
         header.uncompressed_size = data.original_size as u32;
         header.checksum = data.checksum;
-        header.compression_type = CompressionType::Kuba;
+        header.compression_type = compression_type;
         header.flags = crate::storage::chunk::ChunkFlags::sealed();
 
         // Validate header before writing
@@ -605,7 +613,7 @@ impl StorageEngine for LocalDiskEngine {
                 point_count: data.metadata.point_count as u32,
                 size_bytes: total_size,
                 uncompressed_size: data.original_size as u64,
-                compression: CompressionType::Kuba,
+                compression: compression_type,
                 created_at: chrono::Utc::now().timestamp_millis(),
                 last_accessed: chrono::Utc::now().timestamp_millis(),
             });

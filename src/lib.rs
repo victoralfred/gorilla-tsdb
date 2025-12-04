@@ -48,6 +48,11 @@ pub mod query;
 /// Provides service lifecycle management, graceful shutdown, and dependency ordering
 pub mod services;
 
+/// AHPAC (Adaptive Hierarchical Predictive Arithmetic Compression)
+/// Adaptive compression that selects the optimal codec per chunk based on data characteristics.
+/// Provides multiple codecs: Kuba, Chimp, ALP, and Delta+LZ4.
+pub mod ahpac;
+
 /// Multi-dimensional aggregation engine for space-time aggregation
 /// Provides string interning, series registry, and tag-based lookups
 pub mod aggregation;
@@ -60,6 +65,12 @@ pub mod cache;
 pub use engine::{DatabaseConfig, TimeSeriesDB, TimeSeriesDBBuilder};
 pub use error::{Error, Result};
 pub use types::{ChunkId, ChunkIdError, DataPoint, SeriesId, TimeRange};
+
+// Re-export compression utilities
+pub use compression::{AhpacCompressor, KubaCompressor, ParallelCompressor, ParallelConfig};
+
+// Re-export storage integrity checker
+pub use storage::{IntegrityChecker, IntegrityReport};
 
 #[cfg(test)]
 mod tests {

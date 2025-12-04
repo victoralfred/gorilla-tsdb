@@ -109,6 +109,10 @@ pub struct ApplicationConfig {
     pub performance: PerformanceConfig,
     /// Security settings
     pub security: SecurityConfig,
+    /// Advanced tuning settings
+    pub tuning: TuningConfig,
+    /// Integrity checking settings
+    pub integrity: IntegrityConfig,
 }
 
 impl ApplicationConfig {
@@ -389,6 +393,17 @@ pub struct StorageConfig {
     pub enable_checksums: bool,
     /// Sync writes to disk (true = safer, false = faster)
     pub sync_writes: bool,
+
+    // Write buffer configuration for batching points before compression
+    /// Maximum points per active buffer before sealing (default: 1000)
+    /// Higher values improve compression but increase memory usage
+    pub buffer_max_points: usize,
+    /// Maximum time span in milliseconds before sealing buffer (default: 60000 = 1 min)
+    pub buffer_max_duration_ms: i64,
+    /// Maximum buffer size in bytes before sealing (default: 1MB)
+    pub buffer_max_size_bytes: usize,
+    /// Initial capacity for active chunk buffers (default: 1000)
+    pub buffer_initial_capacity: usize,
 }
 
 impl Default for StorageConfig {
@@ -401,6 +416,11 @@ impl Default for StorageConfig {
             seal_size_bytes: 100 * 1024 * 1024, // 100MB
             enable_checksums: true,
             sync_writes: false,
+            // Write buffer defaults (optimized for AHPAC compression)
+            buffer_max_points: 1_000,           // 1K points per chunk
+            buffer_max_duration_ms: 60_000,     // 1 minute
+            buffer_max_size_bytes: 1024 * 1024, // 1MB
+            buffer_initial_capacity: 1_000,
         }
     }
 }
@@ -432,6 +452,16 @@ impl StorageConfig {
     /// Get seal duration as Duration
     pub fn seal_duration(&self) -> Duration {
         Duration::from_millis(self.seal_duration_ms as u64)
+    }
+
+    /// Get buffer configuration for TimeSeriesDB
+    pub fn buffer_config(&self) -> crate::engine::BufferConfig {
+        crate::engine::BufferConfig {
+            max_points: self.buffer_max_points,
+            max_duration_ms: self.buffer_max_duration_ms,
+            max_size_bytes: self.buffer_max_size_bytes,
+            initial_capacity: self.buffer_initial_capacity,
+        }
     }
 }
 
@@ -647,10 +677,22 @@ pub struct CompressionConfig {
     pub max_chunks_per_scan: usize,
     /// Delete original files after compression
     pub delete_original: bool,
-    /// Compression algorithm: "lz4", "zstd", "snappy"
+    /// Compression algorithm: "lz4", "zstd", "snappy", "ahpac"
     pub algorithm: String,
     /// Compression level (algorithm-specific)
     pub level: u32,
+
+    // AHPAC-specific settings
+    /// Enable AHPAC adaptive compression (default: true)
+    pub use_ahpac: bool,
+    /// Enable ANS entropy coding layer (default: false, experimental)
+    pub enable_ans: bool,
+    /// Minimum batch size for parallel compression
+    pub min_parallel_batch_size: usize,
+    /// Target bits per sample (0 = auto)
+    pub target_bits_per_sample: f64,
+    /// Enable compression metrics collection
+    pub collect_metrics: bool,
 }
 
 impl Default for CompressionConfig {
@@ -663,6 +705,81 @@ impl Default for CompressionConfig {
             delete_original: true,
             algorithm: "lz4".to_string(),
             level: 1,
+            use_ahpac: true,
+            enable_ans: false,
+            min_parallel_batch_size: 500,
+            target_bits_per_sample: 0.0, // auto
+            collect_metrics: true,
+        }
+    }
+}
+
+// ============================================================================
+// Advanced Tuning Configuration
+// ============================================================================
+
+/// Advanced tuning configuration for performance optimization
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TuningConfig {
+    /// Enable SIMD acceleration where available
+    pub enable_simd: bool,
+    /// Thread pool size for parallel operations (0 = auto)
+    pub thread_pool_size: usize,
+    /// Maximum memory for in-flight operations (bytes, 0 = auto)
+    pub max_memory_bytes: usize,
+    /// Enable aggressive memory reclamation
+    pub aggressive_memory_reclaim: bool,
+    /// Prefetch distance for sequential reads
+    pub prefetch_distance: usize,
+    /// Enable page locking for mmap
+    pub mlock_enabled: bool,
+}
+
+impl Default for TuningConfig {
+    fn default() -> Self {
+        Self {
+            enable_simd: true,
+            thread_pool_size: 0, // auto-detect
+            max_memory_bytes: 0, // auto
+            aggressive_memory_reclaim: false,
+            prefetch_distance: 4,
+            mlock_enabled: false,
+        }
+    }
+}
+
+// ============================================================================
+// Integrity Configuration
+// ============================================================================
+
+/// Integrity checking and recovery configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct IntegrityConfig {
+    /// Enable background integrity scanning
+    pub background_scan_enabled: bool,
+    /// Interval between scans (seconds, 0 = disabled)
+    pub scan_interval_seconds: u64,
+    /// Enable deep verification (decompress data)
+    pub deep_verify: bool,
+    /// Auto-repair corrupted chunks if WAL available
+    pub auto_repair: bool,
+    /// Create backups before repair
+    pub create_backups: bool,
+    /// Maximum concurrent repair operations
+    pub max_concurrent_repairs: usize,
+}
+
+impl Default for IntegrityConfig {
+    fn default() -> Self {
+        Self {
+            background_scan_enabled: false,
+            scan_interval_seconds: 86400, // 24 hours
+            deep_verify: false,
+            auto_repair: false,
+            create_backups: true,
+            max_concurrent_repairs: 4,
         }
     }
 }
