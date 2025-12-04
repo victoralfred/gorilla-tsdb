@@ -306,6 +306,37 @@ impl ChunkProfile {
             "irregular"
         }
     }
+
+    /// Check if data appears to be high-entropy (random-like)
+    ///
+    /// High-entropy data has:
+    /// - Low lag-1 autocorrelation (immediate next value not predictable)
+    /// - Low XOR zero ratio (few repeated values)
+    /// - Not integer-like
+    /// - Not monotonic
+    ///
+    /// For such data, Kuba's simpler XOR encoding often outperforms
+    /// more complex adaptive codecs.
+    pub fn is_high_entropy(&self) -> bool {
+        // Low lag-1 autocorrelation (the most important for prediction)
+        // We only check lag-1 because later lags can have periodic patterns
+        // that don't help compression anyway
+        let low_lag1_autocorr = self.autocorr[0].abs() < 0.7;
+
+        // Few repeated consecutive values
+        let few_repeats = self.xor_zero_ratio < 0.1;
+
+        // Not integer-like (no detectable scale pattern)
+        let not_integer = self.gcd_scale.is_none();
+
+        // Not monotonic
+        let not_monotonic = self.monotonic == Monotonicity::NonMonotonic;
+
+        // Not smooth (high autocorrelation)
+        let not_smooth = !self.is_smooth();
+
+        low_lag1_autocorr && few_repeats && not_integer && not_monotonic && not_smooth
+    }
 }
 
 impl Default for ChunkProfile {
@@ -482,5 +513,42 @@ mod tests {
         // Constant data has xor_zero_ratio = 1.0, so may be classified as integer-like or many-repeats
         let char2 = profile2.dominant_characteristic();
         assert!(char2 == "many-repeats" || char2 == "integer-like");
+    }
+
+    #[test]
+    fn test_high_entropy_detection() {
+        // Random-ish data should be detected as high entropy
+        let values: Vec<f64> = (0..100)
+            .map(|i| {
+                let x = i as f64;
+                (x * 1.23456).sin() * 100.0 + (x * 7.89).cos() * 50.0
+            })
+            .collect();
+        let points = create_points(&values);
+        let profile = ChunkProfile::compute(&points, 256);
+
+        assert!(profile.is_high_entropy(), "Random data should be high entropy");
+
+        // Smooth data should NOT be high entropy
+        let smooth_values: Vec<f64> = (0..100)
+            .map(|i| 100.0 + i as f64 * 0.001)
+            .collect();
+        let smooth_points = create_points(&smooth_values);
+        let smooth_profile = ChunkProfile::compute(&smooth_points, 256);
+
+        assert!(!smooth_profile.is_high_entropy(), "Smooth data should not be high entropy");
+
+        // Integer data should NOT be high entropy
+        let int_values: Vec<f64> = (0..100).map(|i| (100 + i) as f64).collect();
+        let int_points = create_points(&int_values);
+        let int_profile = ChunkProfile::compute(&int_points, 256);
+
+        assert!(!int_profile.is_high_entropy(), "Integer data should not be high entropy");
+
+        // Constant data should NOT be high entropy
+        let const_points = create_points(&[42.0; 100]);
+        let const_profile = ChunkProfile::compute(&const_points, 256);
+
+        assert!(!const_profile.is_high_entropy(), "Constant data should not be high entropy");
     }
 }

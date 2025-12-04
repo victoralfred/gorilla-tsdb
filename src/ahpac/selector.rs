@@ -129,7 +129,8 @@ impl CodecSelector {
     /// Select codec using heuristics with verification
     ///
     /// Uses heuristic selection but verifies against Chimp as fallback.
-    /// This catches cases where the heuristic makes a poor choice.
+    /// Chimp is used as the universal fallback because it handles all data
+    /// types correctly and provides good compression for most patterns.
     pub fn select_verified(
         &self,
         points: &[DataPoint],
@@ -140,8 +141,11 @@ impl CodecSelector {
 
         let primary_result = primary_codec.compress(points);
 
+        // Always use Chimp as fallback - it's reliable and handles all data types well
+        let fallback_id = CodecId::Chimp;
+
         // If primary is already Chimp, just use it
-        if primary_id == CodecId::Chimp {
+        if primary_id == fallback_id {
             return match primary_result {
                 Ok(data) => (primary_id, data),
                 Err(_) => {
@@ -152,20 +156,20 @@ impl CodecSelector {
         }
 
         // Also try Chimp as fallback
-        let chimp = self.get_codec(CodecId::Chimp);
-        let chimp_result = chimp.compress(points);
+        let fallback = self.get_codec(fallback_id);
+        let fallback_result = fallback.compress(points);
 
-        match (primary_result, chimp_result) {
-            (Ok(p_data), Ok(c_data)) => {
+        match (primary_result, fallback_result) {
+            (Ok(p_data), Ok(f_data)) => {
                 // Pick whichever is smaller
-                if p_data.len() <= c_data.len() {
+                if p_data.len() <= f_data.len() {
                     (primary_id, p_data)
                 } else {
-                    (CodecId::Chimp, c_data)
+                    (fallback_id, f_data)
                 }
             }
             (Ok(p_data), Err(_)) => (primary_id, p_data),
-            (Err(_), Ok(c_data)) => (CodecId::Chimp, c_data),
+            (Err(_), Ok(f_data)) => (fallback_id, f_data),
             (Err(_), Err(_)) => {
                 // Both failed, use raw encoding
                 let raw = Self::encode_raw(points);
