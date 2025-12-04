@@ -671,6 +671,56 @@ impl ActiveChunk {
     pub fn capacity(&self) -> usize {
         self.capacity
     }
+
+    /// Extract all points from the chunk, consuming its data
+    ///
+    /// This method takes ownership of all points in the chunk, leaving it empty.
+    /// The chunk is NOT sealed - it remains usable for new appends.
+    /// Points are returned in sorted order by timestamp.
+    ///
+    /// # Returns
+    ///
+    /// Vector of data points sorted by timestamp
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use kuba_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
+    /// use kuba_tsdb::types::DataPoint;
+    ///
+    /// let chunk = ActiveChunk::new(1, 100, SealConfig::default());
+    ///
+    /// chunk.append(DataPoint { series_id: 1, timestamp: 200, value: 2.0 }).unwrap();
+    /// chunk.append(DataPoint { series_id: 1, timestamp: 100, value: 1.0 }).unwrap();
+    ///
+    /// let points = chunk.take_points().unwrap();
+    /// assert_eq!(points.len(), 2);
+    /// assert_eq!(points[0].timestamp, 100); // Sorted order
+    /// assert_eq!(chunk.point_count(), 0);   // Chunk is now empty
+    /// ```
+    pub fn take_points(&self) -> Result<Vec<DataPoint>, String> {
+        // Acquire write lock
+        let mut points_map = self
+            .points
+            .write()
+            .map_err(|_| "Lock poisoned: cannot take points from corrupted chunk".to_string())?;
+
+        // Check if already sealed
+        if self.sealed.load(Ordering::Acquire) {
+            return Err("Cannot take points from sealed chunk".to_string());
+        }
+
+        // Take ownership of the BTreeMap and convert to Vec
+        let btree = std::mem::take(&mut *points_map);
+        let points: Vec<DataPoint> = btree.into_values().collect();
+
+        // Reset atomic counters
+        self.point_count.store(0, Ordering::Release);
+        self.min_timestamp.store(i64::MAX, Ordering::Release);
+        self.max_timestamp.store(i64::MIN, Ordering::Release);
+
+        Ok(points)
+    }
 }
 
 #[cfg(test)]

@@ -66,6 +66,12 @@ pub use engine::{DatabaseConfig, TimeSeriesDB, TimeSeriesDBBuilder};
 pub use error::{Error, Result};
 pub use types::{ChunkId, ChunkIdError, DataPoint, SeriesId, TimeRange};
 
+// Re-export compression utilities
+pub use compression::{AhpacCompressor, KubaCompressor, ParallelCompressor, ParallelConfig};
+
+// Re-export storage integrity checker
+pub use storage::{IntegrityChecker, IntegrityReport};
+
 #[cfg(test)]
 mod tests {
     #[test]

@@ -44,7 +44,7 @@ pub mod builder;
 pub mod stubs;
 pub mod traits;
 
-pub use builder::{DatabaseConfig, DatabaseStats, TimeSeriesDB, TimeSeriesDBBuilder};
+pub use builder::{BufferConfig, DatabaseConfig, DatabaseStats, TimeSeriesDB, TimeSeriesDBBuilder};
 pub use stubs::{
     InMemoryTimeIndex, ParquetCompressor, ParquetConfig, S3Config, S3Engine, SecretString,
 };

@@ -7,11 +7,13 @@ use super::traits::{
     ChunkStatus, Compressor, IndexConfig, SeriesMetadata, StorageConfig, StorageEngine, TimeIndex,
 };
 use crate::error::{Error, Result};
+use crate::storage::active_chunk::{ActiveChunk, SealConfig};
 use crate::types::{ChunkId, DataPoint, SeriesId, TagFilter, TimeRange};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tracing::{debug, warn};
+use tokio::sync::RwLock;
+use tracing::{debug, info, warn};
 
 /// Database configuration
 #[derive(Clone, Debug)]
@@ -69,6 +71,7 @@ pub struct TimeSeriesDBBuilder {
     storage: Option<Arc<dyn StorageEngine + Send + Sync>>,
     index: Option<Arc<dyn TimeIndex + Send + Sync>>,
     config: DatabaseConfig,
+    buffer_config: Option<BufferConfig>,
 }
 
 impl TimeSeriesDBBuilder {
@@ -79,6 +82,7 @@ impl TimeSeriesDBBuilder {
             storage: None,
             index: None,
             config: DatabaseConfig::default(),
+            buffer_config: None,
         }
     }
 
@@ -124,6 +128,31 @@ impl TimeSeriesDBBuilder {
         self
     }
 
+    /// Set write buffer configuration
+    ///
+    /// Controls how writes are batched before being compressed and stored.
+    /// Higher `max_points` values improve compression but increase memory usage.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let buffer_config = BufferConfig {
+    ///     max_points: 2_000,       // Batch more points for better compression
+    ///     max_duration_ms: 120_000, // 2 minutes max
+    ///     max_size_bytes: 2 * 1024 * 1024, // 2MB
+    ///     initial_capacity: 2_000,
+    /// };
+    /// let db = TimeSeriesDBBuilder::new()
+    ///     .with_buffer_config(buffer_config)
+    ///     // ... other configuration
+    ///     .build()
+    ///     .await?;
+    /// ```
+    pub fn with_buffer_config(mut self, buffer_config: BufferConfig) -> Self {
+        self.buffer_config = Some(buffer_config);
+        self
+    }
+
     /// Build the database with configured engines
     pub async fn build(self) -> Result<TimeSeriesDB> {
         // For now, we'll require all engines to be provided
@@ -157,6 +186,8 @@ impl TimeSeriesDBBuilder {
             storage,
             index,
             config: self.config,
+            active_chunks: Arc::new(RwLock::new(HashMap::new())),
+            buffer_config: self.buffer_config.unwrap_or_default(),
         })
     }
 }
@@ -167,12 +198,51 @@ impl Default for TimeSeriesDBBuilder {
     }
 }
 
+/// Configuration for write buffering
+#[derive(Clone, Debug)]
+pub struct BufferConfig {
+    /// Maximum points per chunk before sealing
+    pub max_points: usize,
+    /// Maximum duration in ms before sealing
+    pub max_duration_ms: i64,
+    /// Maximum size in bytes before sealing
+    pub max_size_bytes: usize,
+    /// Initial capacity for active chunks
+    pub initial_capacity: usize,
+}
+
+impl Default for BufferConfig {
+    fn default() -> Self {
+        Self {
+            max_points: 1_000,           // 1K points per chunk (good for AHPAC)
+            max_duration_ms: 60_000,     // 1 minute
+            max_size_bytes: 1024 * 1024, // 1MB
+            initial_capacity: 1_000,
+        }
+    }
+}
+
+impl BufferConfig {
+    /// Convert to SealConfig
+    fn to_seal_config(&self) -> SealConfig {
+        SealConfig {
+            max_points: self.max_points,
+            max_duration_ms: self.max_duration_ms,
+            max_size_bytes: self.max_size_bytes,
+        }
+    }
+}
+
 /// Main database instance with pluggable engines
 pub struct TimeSeriesDB {
     compressor: Arc<dyn Compressor + Send + Sync>,
     storage: Arc<dyn StorageEngine + Send + Sync>,
     index: Arc<dyn TimeIndex + Send + Sync>,
     config: DatabaseConfig,
+    /// Per-series active chunks for buffering writes
+    active_chunks: Arc<RwLock<HashMap<SeriesId, Arc<ActiveChunk>>>>,
+    /// Buffer configuration
+    buffer_config: BufferConfig,
 }
 
 impl TimeSeriesDB {
@@ -229,12 +299,10 @@ impl TimeSeriesDB {
     // Data Operations
     // =========================================================================
 
-    /// Write data points to the database
+    /// Write data points to the database with buffering
     ///
-    /// This is the main entry point for ingesting data. Points are:
-    /// 1. Compressed using the configured compressor
-    /// 2. Written to storage
-    /// 3. Indexed for fast retrieval
+    /// Points are buffered in active chunks until a seal threshold is reached.
+    /// This enables better compression ratios with AHPAC by batching points.
     ///
     /// # Arguments
     ///
@@ -243,7 +311,7 @@ impl TimeSeriesDB {
     ///
     /// # Returns
     ///
-    /// The chunk ID of the written data
+    /// The chunk ID (may be a placeholder if points are still buffered)
     ///
     /// # Example
     ///
@@ -271,7 +339,75 @@ impl TimeSeriesDB {
         debug!(
             series_id = series_id,
             points = points.len(),
-            "Writing points to database"
+            "Writing points to buffer"
+        );
+
+        // Get or create active chunk for this series
+        let active_chunk = {
+            let chunks = self.active_chunks.read().await;
+            chunks.get(&series_id).cloned()
+        };
+
+        let active_chunk = match active_chunk {
+            Some(chunk) => chunk,
+            None => {
+                // Create new active chunk
+                let seal_config = self.buffer_config.to_seal_config();
+                let new_chunk = Arc::new(ActiveChunk::new(
+                    series_id,
+                    self.buffer_config.initial_capacity,
+                    seal_config,
+                ));
+                let mut chunks = self.active_chunks.write().await;
+                chunks.insert(series_id, Arc::clone(&new_chunk));
+                new_chunk
+            }
+        };
+
+        // Append points to active chunk
+        for point in &points {
+            if let Err(e) = active_chunk.append(*point) {
+                warn!(series_id = series_id, error = %e, "Failed to append point");
+                // If append fails (e.g., duplicate), continue with other points
+            }
+        }
+
+        // Check if we should seal
+        if active_chunk.should_seal() {
+            return self.seal_active_chunk(series_id).await;
+        }
+
+        // Return a placeholder chunk ID for buffered writes
+        // The actual chunk ID will be created when sealed
+        Ok(ChunkId::new())
+    }
+
+    /// Seal the active chunk for a series and write to storage
+    async fn seal_active_chunk(&self, series_id: SeriesId) -> Result<ChunkId> {
+        // Remove and get the active chunk
+        let active_chunk = {
+            let mut chunks = self.active_chunks.write().await;
+            chunks.remove(&series_id)
+        };
+
+        let active_chunk = match active_chunk {
+            Some(chunk) => chunk,
+            None => return Err(Error::General("No active chunk to seal".to_string())),
+        };
+
+        // Get all points from the active chunk
+        let points = active_chunk
+            .take_points()
+            .map_err(|e| Error::General(format!("Failed to take points: {}", e)))?;
+
+        if points.is_empty() {
+            return Err(Error::General("Cannot seal empty chunk".to_string()));
+        }
+
+        info!(
+            series_id = series_id,
+            points = points.len(),
+            "Sealing active chunk"
         );
 
         // Compress the data
@@ -305,11 +441,36 @@ impl TimeSeriesDB {
         debug!(
             series_id = series_id,
             chunk_id = %chunk_id,
+            points = points.len(),
             compressed_size = compressed.compressed_size,
-            "Chunk written successfully"
+            "Chunk sealed and written successfully"
         );
 
         Ok(chunk_id)
+    }
+
+    /// Flush all active chunks to storage
+    ///
+    /// Call this during graceful shutdown to ensure no data is lost.
+    pub async fn flush_all(&self) -> Result<Vec<ChunkId>> {
+        let series_ids: Vec<SeriesId> = {
+            let chunks = self.active_chunks.read().await;
+            chunks.keys().cloned().collect()
+        };
+
+        let mut chunk_ids = Vec::new();
+        for series_id in series_ids {
+            match self.seal_active_chunk(series_id).await {
+                Ok(chunk_id) => chunk_ids.push(chunk_id),
+                Err(e) => warn!(series_id = series_id, error = %e, "Failed to flush series"),
+            }
+        }
+
+        info!(
+            chunks_flushed = chunk_ids.len(),
+            "Flushed all active chunks"
+        );
+        Ok(chunk_ids)
     }
 
     /// Query data points from the database
