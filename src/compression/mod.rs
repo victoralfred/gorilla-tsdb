@@ -8,8 +8,11 @@
 //! - **Parallel**: Multi-threaded compression for high throughput
 //! - **ANS**: Asymmetric Numeral Systems entropy coding for near-optimal compression
 //! - **Metrics**: Compression performance monitoring and observability
+//! - **Algorithm Selector**: Intelligent selection of compression algorithms
 
 pub mod ahpac;
+/// Algorithm selection based on data characteristics
+pub mod algorithm_selector;
 /// ANS (Asymmetric Numeral Systems) entropy coding
 pub mod ans;
 pub mod bit_stream;
@@ -22,6 +25,10 @@ pub mod parallel;
 pub mod simd;
 
 pub use ahpac::AhpacCompressor;
+pub use algorithm_selector::{
+    AlgorithmSelector, AlgorithmStats, AlgorithmStatsSnapshot, BenchmarkResult,
+    ChunkCharacteristics, CompressionBenchmark, SelectionConfig,
+};
 pub use ans::{
     compress as ans_compress, decompress as ans_decompress, AnsDecoder, AnsEncoder, AnsError,
     AnsStats,
