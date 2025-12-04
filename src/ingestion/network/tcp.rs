@@ -43,7 +43,7 @@ use crate::ingestion::IngestionPipeline;
 /// # Example
 ///
 /// ```rust,no_run
-/// use gorilla_tsdb::ingestion::network::{TcpListener, ConnectionConfig};
+/// use kuba_tsdb::ingestion::network::{TcpListener, ConnectionConfig};
 /// use std::net::SocketAddr;
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {

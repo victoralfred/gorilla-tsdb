@@ -24,8 +24,8 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use gorilla_tsdb::storage::LocalDiskEngine;
-//! use gorilla_tsdb::engine::traits::StorageEngine;
+//! use kuba_tsdb::storage::LocalDiskEngine;
+//! use kuba_tsdb::engine::traits::StorageEngine;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! // Create storage engine

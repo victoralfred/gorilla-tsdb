@@ -19,16 +19,16 @@ use super::types::{
     AggregateExecutionResult, CostEstimateInfo, ExecutionStep, ExplainResult,
     GroupedAggregationResult, OptimizationInfo, SeriesData,
 };
-use gorilla_tsdb::cache::SharedQueryCache;
-use gorilla_tsdb::engine::TimeSeriesDB;
-use gorilla_tsdb::query::ast::{
+use kuba_tsdb::cache::SharedQueryCache;
+use kuba_tsdb::engine::TimeSeriesDB;
+use kuba_tsdb::query::ast::{
     AggregateQuery, DownsampleMethod, DownsampleQuery, LatestQuery, SelectQuery,
 };
-use gorilla_tsdb::query::result::{QueryResult, ResultData, ResultRow, SeriesResult};
-use gorilla_tsdb::query::{
+use kuba_tsdb::query::result::{QueryResult, ResultData, ResultRow, SeriesResult};
+use kuba_tsdb::query::{
     parse_promql, parse_sql, AggregationFunction as QueryAggFunction, Query as ParsedQuery,
 };
-use gorilla_tsdb::types::{DataPoint, SeriesId};
+use kuba_tsdb::types::{DataPoint, SeriesId};
 use std::collections::HashMap;
 
 /// Detected query language

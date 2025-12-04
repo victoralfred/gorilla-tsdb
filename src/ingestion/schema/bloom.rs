@@ -48,7 +48,7 @@ impl BloomFilter {
     /// # Example
     ///
     /// ```rust
-    /// use gorilla_tsdb::ingestion::schema::BloomFilter;
+    /// use kuba_tsdb::ingestion::schema::BloomFilter;
     ///
     /// // Create filter for 10,000 elements with 1% false positive rate
     /// let filter = BloomFilter::new(10_000, 0.01);
@@ -235,7 +235,7 @@ impl ScalableBloomFilter {
     /// # Example
     ///
     /// ```rust
-    /// use gorilla_tsdb::ingestion::schema::ScalableBloomFilter;
+    /// use kuba_tsdb::ingestion::schema::ScalableBloomFilter;
     ///
     /// let filter = ScalableBloomFilter::new(10_000, 0.01);
     /// ```

@@ -28,7 +28,7 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use gorilla_tsdb::cache::{InvalidationPublisher, InvalidationSubscriber};
+//! use kuba_tsdb::cache::{InvalidationPublisher, InvalidationSubscriber};
 //!
 //! // Publisher (on write path)
 //! let publisher = InvalidationPublisher::new("redis://localhost:6379").await?;

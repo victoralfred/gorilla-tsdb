@@ -27,8 +27,8 @@
 //! # Usage
 //!
 //! ```rust
-//! use gorilla_tsdb::query::subscription::{SubscriptionManager, SubscriptionConfig};
-//! use gorilla_tsdb::types::DataPoint;
+//! use kuba_tsdb::query::subscription::{SubscriptionManager, SubscriptionConfig};
+//! use kuba_tsdb::types::DataPoint;
 //!
 //! let config = SubscriptionConfig::default();
 //! let manager = SubscriptionManager::new(config);

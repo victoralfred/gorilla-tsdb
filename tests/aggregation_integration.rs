@@ -10,15 +10,13 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use gorilla_tsdb::aggregation::index::TagMatcher;
-use gorilla_tsdb::aggregation::space_time::{
-    AggregateFunction, AggregateQuery, InMemoryDataSource,
-};
-use gorilla_tsdb::aggregation::{
+use kuba_tsdb::aggregation::index::TagMatcher;
+use kuba_tsdb::aggregation::space_time::{AggregateFunction, AggregateQuery, InMemoryDataSource};
+use kuba_tsdb::aggregation::{
     AggQueryBuilder, CardinalityConfig, CardinalityController, MetadataStore, QueryPlannerConfig,
     SpaceTimeAggregator, TagResolver,
 };
-use gorilla_tsdb::types::{DataPoint, SeriesId, TimeRange};
+use kuba_tsdb::types::{DataPoint, SeriesId, TimeRange};
 
 // ============================================================================
 // Helper Functions
@@ -646,7 +644,7 @@ fn test_large_time_range() {
 
 #[test]
 fn test_bitmap_word_boundary() {
-    use gorilla_tsdb::aggregation::index::TagBitmap;
+    use kuba_tsdb::aggregation::index::TagBitmap;
 
     let mut bitmap = TagBitmap::new();
 
@@ -669,7 +667,7 @@ fn test_bitmap_word_boundary() {
 
 #[test]
 fn test_bitmap_duplicate_set() {
-    use gorilla_tsdb::aggregation::index::TagBitmap;
+    use kuba_tsdb::aggregation::index::TagBitmap;
 
     let mut bitmap = TagBitmap::new();
 
@@ -683,8 +681,8 @@ fn test_bitmap_duplicate_set() {
 
 #[test]
 fn test_tag_filter_display() {
-    use gorilla_tsdb::aggregation::data_model::{TagKeyId, TagValueId};
-    use gorilla_tsdb::aggregation::index::TagFilter;
+    use kuba_tsdb::aggregation::data_model::{TagKeyId, TagValueId};
+    use kuba_tsdb::aggregation::index::TagFilter;
 
     let filter = TagFilter::All;
     assert_eq!(filter.to_string(), "*");
@@ -707,7 +705,7 @@ fn test_tag_filter_display() {
 
 #[test]
 fn test_kmv_estimator_duplicates() {
-    use gorilla_tsdb::aggregation::cardinality::CardinalityEstimator;
+    use kuba_tsdb::aggregation::cardinality::CardinalityEstimator;
 
     let mut estimator = CardinalityEstimator::new(256);
 
@@ -722,7 +720,7 @@ fn test_kmv_estimator_duplicates() {
 
 #[test]
 fn test_kmv_estimator_exact_when_under_k() {
-    use gorilla_tsdb::aggregation::cardinality::CardinalityEstimator;
+    use kuba_tsdb::aggregation::cardinality::CardinalityEstimator;
 
     let mut estimator = CardinalityEstimator::new(256);
 
@@ -737,7 +735,7 @@ fn test_kmv_estimator_exact_when_under_k() {
 
 #[test]
 fn test_kmv_estimator_merge_error() {
-    use gorilla_tsdb::aggregation::cardinality::{CardinalityEstimator, CardinalityMergeError};
+    use kuba_tsdb::aggregation::cardinality::{CardinalityEstimator, CardinalityMergeError};
 
     let mut est1 = CardinalityEstimator::new(64);
     let est2 = CardinalityEstimator::new(128);
@@ -757,7 +755,7 @@ fn test_kmv_estimator_merge_error() {
 
 #[test]
 fn test_moving_functions_edge_cases() {
-    use gorilla_tsdb::aggregation::functions::{moving_avg, moving_max, moving_min, moving_sum};
+    use kuba_tsdb::aggregation::functions::{moving_avg, moving_max, moving_min, moving_sum};
 
     // Empty input
     let empty: Vec<f64> = vec![];
@@ -772,13 +770,13 @@ fn test_moving_functions_edge_cases() {
     assert!(moving_sum(&values, 0).is_empty());
 
     // Window larger than MAX_WINDOW_SIZE
-    use gorilla_tsdb::aggregation::functions::MAX_WINDOW_SIZE;
+    use kuba_tsdb::aggregation::functions::MAX_WINDOW_SIZE;
     assert!(moving_avg(&values, MAX_WINDOW_SIZE + 1).is_empty());
 }
 
 #[test]
 fn test_time_functions_negative_timestamps() {
-    use gorilla_tsdb::aggregation::functions::{day_of_month, day_of_week, hour, minute};
+    use kuba_tsdb::aggregation::functions::{day_of_month, day_of_week, hour, minute};
 
     // Negative timestamps should return None
     assert!(hour(-1000).is_none());
@@ -793,7 +791,7 @@ fn test_time_functions_negative_timestamps() {
 
 #[test]
 fn test_string_length_validation() {
-    use gorilla_tsdb::aggregation::metadata::{
+    use kuba_tsdb::aggregation::metadata::{
         InternError, TagDictionary, MAX_TAG_KEY_LENGTH, MAX_TAG_VALUE_LENGTH,
     };
 

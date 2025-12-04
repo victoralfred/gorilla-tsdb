@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Report a bug to help us improve Gorilla TSDB
+about: Report a bug to help us improve Kuba TSDB
 title: "[BUG] "
 labels: bug
 assignees: ''
@@ -14,7 +14,7 @@ assignees: ''
 
 - **OS**: (e.g., Ubuntu 22.04, macOS 14.0)
 - **Rust Version**: (output of `rustc --version`)
-- **Gorilla TSDB Version**: (git commit hash or version tag)
+- **Kuba TSDB Version**: (git commit hash or version tag)
 - **Redis Version**: (if applicable)
 
 ## Steps to Reproduce

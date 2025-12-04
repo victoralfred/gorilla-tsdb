@@ -1,6 +1,6 @@
 /// Comprehensive tests to investigate the 9 claimed issues in test.result
 /// Each test targets a specific claim to determine if it's a real bug.
-use gorilla_tsdb::compression::bit_stream::{BitReader, BitWriter};
+use kuba_tsdb::compression::bit_stream::{BitReader, BitWriter};
 
 /// ISSUE #1: Bit Ordering (MSB vs LSB) Is Inconsistent
 /// Claim: "reversed bit patterns" and "incorrect reconstruction of values above 8 bits"

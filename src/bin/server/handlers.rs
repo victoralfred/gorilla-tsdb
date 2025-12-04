@@ -1,4 +1,4 @@
-//! HTTP Handlers for the Gorilla TSDB Server
+//! HTTP Handlers for the Kuba TSDB Server
 //!
 //! This module contains all HTTP endpoint handlers for the REST API.
 //!
@@ -19,16 +19,16 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use gorilla_tsdb::cache::InvalidationPublisher;
-use gorilla_tsdb::cache::SharedQueryCache;
-use gorilla_tsdb::engine::TimeSeriesDB;
-use gorilla_tsdb::ingestion::schema::sanitize_tags_for_redis;
-use gorilla_tsdb::query::ast::{Query as AstQuery, SelectQuery, SeriesSelector};
-use gorilla_tsdb::query::result::QueryResult;
-use gorilla_tsdb::query::subscription::SubscriptionManager;
-use gorilla_tsdb::security::{check_per_client_rate_limit, get_rate_limit_info};
-use gorilla_tsdb::storage::LocalDiskEngine;
-use gorilla_tsdb::types::{generate_series_id, DataPoint, SeriesId, TagFilter, TimeRange};
+use kuba_tsdb::cache::InvalidationPublisher;
+use kuba_tsdb::cache::SharedQueryCache;
+use kuba_tsdb::engine::TimeSeriesDB;
+use kuba_tsdb::ingestion::schema::sanitize_tags_for_redis;
+use kuba_tsdb::query::ast::{Query as AstQuery, SelectQuery, SeriesSelector};
+use kuba_tsdb::query::result::QueryResult;
+use kuba_tsdb::query::subscription::SubscriptionManager;
+use kuba_tsdb::security::{check_per_client_rate_limit, get_rate_limit_info};
+use kuba_tsdb::storage::LocalDiskEngine;
+use kuba_tsdb::types::{generate_series_id, DataPoint, SeriesId, TagFilter, TimeRange};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::Ordering;
@@ -185,7 +185,7 @@ pub async fn get_stats(State(state): State<Arc<AppState>>) -> Json<StatsResponse
 /// }
 /// ```
 pub async fn get_cache_stats(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
-    use gorilla_tsdb::cache::UnifiedCacheManager;
+    use kuba_tsdb::cache::UnifiedCacheManager;
 
     // Create unified manager (storage cache not yet integrated in AppState)
     let manager = UnifiedCacheManager::new(state.query_cache.clone(), None);
@@ -539,7 +539,7 @@ pub async fn query_points(
 
         // Convert cached result back to response
         let points: Vec<QueryPoint> = match cached_result.data {
-            gorilla_tsdb::query::result::ResultData::Rows(rows) => rows
+            kuba_tsdb::query::result::ResultData::Rows(rows) => rows
                 .iter()
                 .map(|r| QueryPoint {
                     timestamp: r.timestamp,

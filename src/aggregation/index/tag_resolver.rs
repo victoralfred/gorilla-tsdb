@@ -13,8 +13,8 @@
 //! # Example
 //!
 //! ```rust
-//! use gorilla_tsdb::aggregation::index::{TagResolver, TagMatcher};
-//! use gorilla_tsdb::aggregation::MetadataStore;
+//! use kuba_tsdb::aggregation::index::{TagResolver, TagMatcher};
+//! use kuba_tsdb::aggregation::MetadataStore;
 //! use std::sync::Arc;
 //!
 //! let metadata = Arc::new(MetadataStore::in_memory());

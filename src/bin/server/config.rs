@@ -2,7 +2,7 @@
 //!
 //! This module handles loading and managing server configuration.
 
-use gorilla_tsdb::config::ApplicationConfig;
+use kuba_tsdb::config::ApplicationConfig;
 use std::path::PathBuf;
 
 /// Server runtime configuration derived from ApplicationConfig

@@ -40,8 +40,8 @@ pub struct WriteStats {
 /// # Example
 ///
 /// ```
-/// use gorilla_tsdb::storage::writer::{ChunkWriter, ChunkWriterConfig};
-/// use gorilla_tsdb::types::DataPoint;
+/// use kuba_tsdb::storage::writer::{ChunkWriter, ChunkWriterConfig};
+/// use kuba_tsdb::types::DataPoint;
 ///
 /// # async fn example() -> Result<(), String> {
 /// let config = ChunkWriterConfig::default();
@@ -150,7 +150,7 @@ impl ChunkWriter {
     /// # Example
     ///
     /// ```
-    /// use gorilla_tsdb::storage::writer::{ChunkWriter, ChunkWriterConfig};
+    /// use kuba_tsdb::storage::writer::{ChunkWriter, ChunkWriterConfig};
     ///
     /// # async fn example() {
     /// let config = ChunkWriterConfig {
@@ -210,8 +210,8 @@ impl ChunkWriter {
     /// # Example
     ///
     /// ```
-    /// use gorilla_tsdb::storage::writer::{ChunkWriter, ChunkWriterConfig};
-    /// use gorilla_tsdb::types::DataPoint;
+    /// use kuba_tsdb::storage::writer::{ChunkWriter, ChunkWriterConfig};
+    /// use kuba_tsdb::types::DataPoint;
     ///
     /// # async fn example() -> Result<(), String> {
     /// let mut writer = ChunkWriter::new(1, "/data".into(), ChunkWriterConfig::default());
@@ -296,8 +296,8 @@ impl ChunkWriter {
     /// # Example
     ///
     /// ```
-    /// use gorilla_tsdb::storage::writer::{ChunkWriter, ChunkWriterConfig};
-    /// use gorilla_tsdb::types::DataPoint;
+    /// use kuba_tsdb::storage::writer::{ChunkWriter, ChunkWriterConfig};
+    /// use kuba_tsdb::types::DataPoint;
     ///
     /// # async fn example() -> Result<(), String> {
     /// let mut writer = ChunkWriter::new(1, "/data".into(), ChunkWriterConfig::default());
@@ -558,7 +558,7 @@ impl ChunkWriter {
     fn generate_chunk_path(&self) -> PathBuf {
         use uuid::Uuid;
         let chunk_id = Uuid::new_v4();
-        self.base_path.join(format!("chunk_{}.gor", chunk_id))
+        self.base_path.join(format!("chunk_{}.kub", chunk_id))
     }
 }
 

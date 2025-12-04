@@ -40,11 +40,11 @@
 //! # Example
 //!
 //! ```rust
-//! use gorilla_tsdb::aggregation::{
+//! use kuba_tsdb::aggregation::{
 //!     SpaceTimeAggregator, AggregateFunction, AggregateQuery, InMemoryDataSource
 //! };
-//! use gorilla_tsdb::aggregation::index::TagMatcher;
-//! use gorilla_tsdb::types::{DataPoint, TimeRange};
+//! use kuba_tsdb::aggregation::index::TagMatcher;
+//! use kuba_tsdb::types::{DataPoint, TimeRange};
 //! use std::time::Duration;
 //!
 //! // Create in-memory data source with sample data

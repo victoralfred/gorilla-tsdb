@@ -1,8 +1,8 @@
-//! Request and Response Types for the Gorilla TSDB HTTP Server
+//! Request and Response Types for the Kuba TSDB HTTP Server
 //!
 //! This module contains all serialization/deserialization types used by the HTTP API.
 
-use gorilla_tsdb::types::SeriesId;
+use kuba_tsdb::types::SeriesId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

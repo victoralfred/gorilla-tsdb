@@ -22,7 +22,7 @@
 //! # Example
 //!
 //! ```rust
-//! use gorilla_tsdb::query::parser::{parse_sql, parse_promql, parse_query};
+//! use kuba_tsdb::query::parser::{parse_sql, parse_promql, parse_query};
 //!
 //! // Parse SQL query
 //! let query = parse_sql("SELECT * FROM cpu WHERE time >= 0");

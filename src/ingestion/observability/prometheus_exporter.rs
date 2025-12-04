@@ -13,7 +13,7 @@ use crate::ingestion::metrics::{IngestionMetrics, MetricsSnapshot};
 /// Configuration for Prometheus exporter
 #[derive(Debug, Clone)]
 pub struct PrometheusConfig {
-    /// Prefix for all metric names (default: "gorilla_tsdb_ingestion")
+    /// Prefix for all metric names (default: "kuba_tsdb_ingestion")
     pub metric_prefix: String,
     /// Include process metrics (CPU, memory, etc.)
     pub include_process_metrics: bool,
@@ -24,7 +24,7 @@ pub struct PrometheusConfig {
 impl Default for PrometheusConfig {
     fn default() -> Self {
         Self {
-            metric_prefix: "gorilla_tsdb_ingestion".to_string(),
+            metric_prefix: "kuba_tsdb_ingestion".to_string(),
             include_process_metrics: true,
             include_runtime_metrics: false,
         }
@@ -349,7 +349,7 @@ mod tests {
     #[test]
     fn test_prometheus_config_default() {
         let config = PrometheusConfig::default();
-        assert_eq!(config.metric_prefix, "gorilla_tsdb_ingestion");
+        assert_eq!(config.metric_prefix, "kuba_tsdb_ingestion");
         assert!(config.include_process_metrics);
     }
 
@@ -370,11 +370,11 @@ mod tests {
         let output = exporter.export();
 
         // Check for expected metric names
-        assert!(output.contains("gorilla_tsdb_ingestion_points_received_total"));
-        assert!(output.contains("gorilla_tsdb_ingestion_points_written_total"));
-        assert!(output.contains("gorilla_tsdb_ingestion_points_rejected_total"));
-        assert!(output.contains("gorilla_tsdb_ingestion_bytes_written_total"));
-        assert!(output.contains("gorilla_tsdb_ingestion_write_success_rate"));
+        assert!(output.contains("kuba_tsdb_ingestion_points_received_total"));
+        assert!(output.contains("kuba_tsdb_ingestion_points_written_total"));
+        assert!(output.contains("kuba_tsdb_ingestion_points_rejected_total"));
+        assert!(output.contains("kuba_tsdb_ingestion_bytes_written_total"));
+        assert!(output.contains("kuba_tsdb_ingestion_write_success_rate"));
 
         // Check for HELP and TYPE comments
         assert!(output.contains("# HELP"));
@@ -392,9 +392,9 @@ mod tests {
         let output = exporter.export();
 
         // Check for specific values
-        assert!(output.contains("gorilla_tsdb_ingestion_points_received_total 1000"));
-        assert!(output.contains("gorilla_tsdb_ingestion_points_written_total 800"));
-        assert!(output.contains("gorilla_tsdb_ingestion_bytes_written_total 4000"));
+        assert!(output.contains("kuba_tsdb_ingestion_points_received_total 1000"));
+        assert!(output.contains("kuba_tsdb_ingestion_points_written_total 800"));
+        assert!(output.contains("kuba_tsdb_ingestion_bytes_written_total 4000"));
     }
 
     #[test]
@@ -421,6 +421,6 @@ mod tests {
 
         let output = exporter.export();
         assert!(output.contains("custom_prefix_points_received_total"));
-        assert!(!output.contains("gorilla_tsdb_ingestion_points_received_total"));
+        assert!(!output.contains("kuba_tsdb_ingestion_points_received_total"));
     }
 }

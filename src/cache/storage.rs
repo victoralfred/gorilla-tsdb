@@ -33,7 +33,7 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use gorilla_tsdb::cache::{CacheManager, StorageCacheConfig, StorageCacheKey};
+//! use kuba_tsdb::cache::{CacheManager, StorageCacheConfig, StorageCacheKey};
 //! use std::sync::Arc;
 //!
 //! # #[tokio::main]

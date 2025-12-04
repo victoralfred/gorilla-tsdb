@@ -17,7 +17,7 @@
 //! # Example
 //!
 //! ```rust
-//! use gorilla_tsdb::ingestion::protocol::{detect_protocol, Protocol};
+//! use kuba_tsdb::ingestion::protocol::{detect_protocol, Protocol};
 //!
 //! let line_data = b"cpu,host=server01 value=42.0";
 //! assert_eq!(detect_protocol(line_data), Protocol::LineProtocol);

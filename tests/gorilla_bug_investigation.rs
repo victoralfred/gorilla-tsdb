@@ -1,13 +1,13 @@
 /// Simplified tests to investigate claimed bugs in bug.result
 /// Tests are focused on verifying round-trip correctness and edge cases
-use gorilla_tsdb::compression::gorilla::GorillaCompressor;
-use gorilla_tsdb::engine::traits::Compressor;
-use gorilla_tsdb::types::DataPoint;
+use kuba_tsdb::compression::kuba::KubaCompressor;
+use kuba_tsdb::engine::traits::Compressor;
+use kuba_tsdb::types::DataPoint;
 
 /// ISSUE 1.1: Range Bounds - Test boundary values
 #[tokio::test]
 async fn test_range_boundary_values() {
-    let compressor = GorillaCompressor::new();
+    let compressor = KubaCompressor::new();
 
     // Test exact boundary values for each encoding range
     // Note: Timestamps must be monotonic, so we test negative dod by using
@@ -51,7 +51,7 @@ async fn test_range_boundary_values() {
 /// ISSUE 1.2: Large Delta Overflow - Test deltas exceeding i32
 #[tokio::test]
 async fn test_large_delta_overflow() {
-    let compressor = GorillaCompressor::new();
+    let compressor = KubaCompressor::new();
 
     // Delta that exceeds i32::MAX
     let large_ts = (i32::MAX as i64) + 10000;
@@ -96,7 +96,7 @@ async fn test_large_delta_overflow() {
 /// ISSUE 1.3: Wrapping Overflow - Test with extreme timestamps
 #[tokio::test]
 async fn test_wrapping_overflow() {
-    let compressor = GorillaCompressor::new();
+    let compressor = KubaCompressor::new();
 
     let points = vec![
         DataPoint {
@@ -131,7 +131,7 @@ async fn test_wrapping_overflow() {
 /// ISSUE 2.1: Truncated Bitstream - Test robustness
 #[tokio::test]
 async fn test_truncated_bitstream() {
-    let compressor = GorillaCompressor::new();
+    let compressor = KubaCompressor::new();
 
     let points = vec![
         DataPoint {
@@ -172,7 +172,7 @@ async fn test_truncated_bitstream() {
 /// ISSUE 3: XOR Value Compression - Test various float patterns
 #[tokio::test]
 async fn test_xor_value_patterns() {
-    let compressor = GorillaCompressor::new();
+    let compressor = KubaCompressor::new();
 
     let test_cases = vec![
         (1.0, 1.0, "identical"),
@@ -211,7 +211,7 @@ async fn test_xor_value_patterns() {
 /// ISSUE 3.2: Leading Zeros - Test denormalized numbers
 #[tokio::test]
 async fn test_leading_zeros_extreme() {
-    let compressor = GorillaCompressor::new();
+    let compressor = KubaCompressor::new();
 
     let points = vec![
         DataPoint {
@@ -251,19 +251,19 @@ async fn test_leading_zeros_extreme() {
 /// ISSUE 5: Security - Test malicious inputs
 #[tokio::test]
 async fn test_malicious_huge_count() {
-    let compressor = GorillaCompressor::new();
+    let compressor = KubaCompressor::new();
     use bytes::Bytes;
 
     // Create block claiming 15 million points (exceeds 10M limit)
     let malicious_data = vec![0xFFu8; 1000];
 
-    let compressed = gorilla_tsdb::engine::traits::CompressedBlock {
-        algorithm_id: "gorilla".to_string(),
+    let compressed = kuba_tsdb::engine::traits::CompressedBlock {
+        algorithm_id: "Kuba".to_string(),
         original_size: 15_000_000 * 24, // Pretend huge data
         compressed_size: 1000,
         checksum: 0,
         data: Bytes::from(malicious_data),
-        metadata: gorilla_tsdb::engine::traits::BlockMetadata {
+        metadata: kuba_tsdb::engine::traits::BlockMetadata {
             start_timestamp: 0,
             end_timestamp: 1000,
             point_count: 15_000_000, // 15 million > 10M limit
@@ -280,7 +280,7 @@ async fn test_malicious_huge_count() {
 /// ISSUE 6.1: Original Size Calculation Bug
 #[tokio::test]
 async fn test_original_size_bug() {
-    let compressor = GorillaCompressor::new();
+    let compressor = KubaCompressor::new();
 
     let points = vec![
         DataPoint {
@@ -325,7 +325,7 @@ async fn test_original_size_bug() {
 /// TEST COVERAGE: Special Float Values
 #[tokio::test]
 async fn test_special_floats() {
-    let compressor = GorillaCompressor::new();
+    let compressor = KubaCompressor::new();
 
     let points = vec![
         DataPoint {
@@ -373,7 +373,7 @@ async fn test_special_floats() {
 /// TEST COVERAGE: Irregular Timestamps
 #[tokio::test]
 async fn test_irregular_timestamps() {
-    let compressor = GorillaCompressor::new();
+    let compressor = KubaCompressor::new();
 
     let points = vec![
         DataPoint {
@@ -420,7 +420,7 @@ async fn test_irregular_timestamps() {
 async fn test_random_data() {
     use rand::Rng;
 
-    let compressor = GorillaCompressor::new();
+    let compressor = KubaCompressor::new();
     let mut rng = rand::rng();
 
     let mut points: Vec<DataPoint> = (0..100)
@@ -431,7 +431,7 @@ async fn test_random_data() {
         })
         .collect();
 
-    // Sort by timestamp (required for Gorilla)
+    // Sort by timestamp (required for Kuba)
     points.sort_by_key(|p| p.timestamp);
 
     let compressed = compressor

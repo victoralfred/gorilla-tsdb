@@ -446,13 +446,13 @@ mod tests {
         ChunkMetadata {
             chunk_id: ChunkId::new(),
             series_id,
-            path: PathBuf::from("/tmp/test.gor"),
+            path: PathBuf::from("/tmp/test.kub"),
             start_timestamp: start,
             end_timestamp: end,
             point_count: 100,
             size_bytes: 1024,
             uncompressed_size: 0,
-            compression: CompressionType::Gorilla,
+            compression: CompressionType::Kuba,
             created_at: 0,
             last_accessed: 0,
         }

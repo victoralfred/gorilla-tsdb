@@ -55,7 +55,7 @@ impl SeriesMetadata {
             name: None,
             retention_days: 0, // Infinite retention by default
             max_points_per_chunk: 10_000,
-            compression: "gorilla".to_string(),
+            compression: "Kuba".to_string(),
             created_at: now,
             modified_at: now,
             total_points: 0,
@@ -409,8 +409,8 @@ impl DirectoryMaintenance {
         while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();
 
-            // Only process .gor files
-            if path.extension().and_then(|e| e.to_str()) != Some("gor") {
+            // Only process .kub files
+            if path.extension().and_then(|e| e.to_str()) != Some("kub") {
                 continue;
             }
 
@@ -466,7 +466,7 @@ impl DirectoryMaintenance {
         while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();
 
-            if path.extension().and_then(|e| e.to_str()) == Some("gor") {
+            if path.extension().and_then(|e| e.to_str()) == Some("kub") {
                 chunk_count += 1;
 
                 // Try to read header
@@ -529,7 +529,7 @@ impl DirectoryMaintenance {
             }
 
             // If we find any other file, directory is not empty
-            if path.extension().and_then(|e| e.to_str()) == Some("gor") {
+            if path.extension().and_then(|e| e.to_str()) == Some("kub") {
                 return Ok(false);
             }
         }
@@ -608,11 +608,11 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
 
         // Create some chunk files
-        fs::write(temp_dir.path().join("chunk_old.gor"), b"old")
+        fs::write(temp_dir.path().join("chunk_old.kub"), b"old")
             .await
             .unwrap();
         sleep(Duration::from_millis(10)).await;
-        fs::write(temp_dir.path().join("chunk_new.gor"), b"new")
+        fs::write(temp_dir.path().join("chunk_new.kub"), b"new")
             .await
             .unwrap();
 
@@ -624,8 +624,8 @@ mod tests {
         assert_eq!(removed, 0);
 
         // Both files should still exist
-        assert!(temp_dir.path().join("chunk_old.gor").exists());
-        assert!(temp_dir.path().join("chunk_new.gor").exists());
+        assert!(temp_dir.path().join("chunk_old.kub").exists());
+        assert!(temp_dir.path().join("chunk_new.kub").exists());
     }
 
     #[tokio::test]

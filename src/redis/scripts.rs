@@ -13,7 +13,7 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use gorilla_tsdb::redis::LuaScripts;
+//! use kuba_tsdb::redis::LuaScripts;
 //!
 //! let scripts = LuaScripts::new();
 //! let add_chunk_script = scripts.add_chunk();

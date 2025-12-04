@@ -110,7 +110,7 @@ impl<'a> ParsedLine<'a> {
 /// # Example
 ///
 /// ```rust
-/// use gorilla_tsdb::ingestion::protocol::{LineProtocolParser, ProtocolParser};
+/// use kuba_tsdb::ingestion::protocol::{LineProtocolParser, ProtocolParser};
 ///
 /// let parser = LineProtocolParser::new();
 /// let input = b"cpu,host=server01 value=42.0 1234567890";

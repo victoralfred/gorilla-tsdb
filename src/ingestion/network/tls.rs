@@ -32,7 +32,7 @@ pub enum TlsVersion {
 /// # Example
 ///
 /// ```rust,no_run
-/// use gorilla_tsdb::ingestion::network::TlsConfig;
+/// use kuba_tsdb::ingestion::network::TlsConfig;
 /// use std::path::PathBuf;
 ///
 /// let tls = TlsConfig {

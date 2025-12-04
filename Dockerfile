@@ -1,4 +1,4 @@
-# Multi-stage build for Gorilla TSDB
+# Multi-stage build for Kuba TSDB
 # Optimized for production deployment with minimal image size
 # Runtime: Debian 13 (Trixie) Slim
 
@@ -39,7 +39,7 @@ RUN cargo build --release --lib
 
 # Clean up temporary build artifacts
 RUN rm -f target/release/${APP_NAME} || true \
-    && rm -rf src benches target/release/.fingerprint/gorilla* target/release/deps/gorilla*
+    && rm -rf src benches target/release/.fingerprint/Kuba* target/release/deps/Kuba*
 
 # Final Build Layer - Copy actual source code
 COPY src/ src/
@@ -62,8 +62,8 @@ ARG APP_USER=tsdb
 ARG APP_UID=1000
 
 # OCI image labels
-LABEL org.opencontainers.image.title="Gorilla TSDB" \
-      org.opencontainers.image.description="High-performance time-series database with Gorilla compression" \
+LABEL org.opencontainers.image.title="Kuba TSDB" \
+      org.opencontainers.image.description="High-performance time-series database with Kuba compression" \
       org.opencontainers.image.licenses="MIT"
 # 1. Install Runtime Dependencies
 RUN apt update && apt install -y \
@@ -79,9 +79,9 @@ RUN apt update && apt install -y \
 RUN useradd -m -u 1000 -s /bin/bash tsdb
 
 # Create data directory and set ownership
-RUN mkdir -p /data/gorilla-tsdb \
+RUN mkdir -p /data/Kuba-tsdb \
     && chown -R ${APP_USER}:${APP_USER} /data \
-    && chmod 750 /data/gorilla-tsdb
+    && chmod 750 /data/Kuba-tsdb
 
 # Copy Final Binary from builder stage
 COPY --from=builder --chown=${APP_USER}:${APP_USER} \
@@ -94,7 +94,7 @@ USER ${APP_USER}
 # Environment variables
 ENV RUST_LOG=info \
     RUST_BACKTRACE=0 \
-    TSDB_DATA_DIR=/data/gorilla-tsdb \
+    TSDB_DATA_DIR=/data/Kuba-tsdb \
     TSDB_HOST=0.0.0.0 \
     TSDB_PORT=8080
 
@@ -102,7 +102,7 @@ ENV RUST_LOG=info \
 EXPOSE 8080
 
 # Define volume for persistent data
-VOLUME ["/data/gorilla-tsdb"]
+VOLUME ["/data/Kuba-tsdb"]
 
 # Health Check - TCP connection test without external tools
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

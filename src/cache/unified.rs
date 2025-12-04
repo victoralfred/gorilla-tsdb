@@ -9,7 +9,7 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use gorilla_tsdb::cache::UnifiedCacheManager;
+//! use kuba_tsdb::cache::UnifiedCacheManager;
 //!
 //! let manager = UnifiedCacheManager::new(query_cache.clone(), Some(storage_cache.clone()));
 //! let stats = manager.stats();

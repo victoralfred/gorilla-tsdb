@@ -1,4 +1,4 @@
-//! Security hardening for Gorilla TSDB
+//! Security hardening for Kuba TSDB
 //!
 //! This module provides security features including path validation,
 //! rate limiting (both global and per-client), and input sanitization.
@@ -10,7 +10,7 @@
 //! - **Per-client limits**: Prevent single clients from consuming all resources
 //!
 //! ```rust,no_run
-//! use gorilla_tsdb::security::{check_write_rate_limit, PerClientRateLimiter};
+//! use kuba_tsdb::security::{check_write_rate_limit, PerClientRateLimiter};
 //! use std::net::IpAddr;
 //!
 //! // Global rate limiting
@@ -72,7 +72,7 @@ lazy_static! {
 /// # Example
 ///
 /// ```rust
-/// use gorilla_tsdb::security::PerClientRateLimiter;
+/// use kuba_tsdb::security::PerClientRateLimiter;
 ///
 /// let limiter = PerClientRateLimiter::new(100, 1000); // 100 req/sec, max 1000 clients
 ///
@@ -249,7 +249,7 @@ impl PerClientRateLimiter {
 /// # Example
 ///
 /// ```rust
-/// use gorilla_tsdb::security::check_per_client_rate_limit;
+/// use kuba_tsdb::security::check_per_client_rate_limit;
 ///
 /// let client_ip = "192.168.1.100";
 /// if check_per_client_rate_limit(client_ip) {
@@ -375,13 +375,13 @@ fn contains_homograph_characters(s: &str) -> bool {
 /// # Example
 ///
 /// ```
-/// use gorilla_tsdb::security::validate_chunk_path;
+/// use kuba_tsdb::security::validate_chunk_path;
 ///
 /// // Valid path
-/// let path = validate_chunk_path("/data/gorilla-tsdb/chunks/chunk_1.gor").unwrap();
+/// let path = validate_chunk_path("/data/Kuba-tsdb/chunks/chunk_1.kub").unwrap();
 ///
 /// // Invalid path (traversal attempt)
-/// let result = validate_chunk_path("/data/gorilla-tsdb/../etc/passwd");
+/// let result = validate_chunk_path("/data/Kuba-tsdb/../etc/passwd");
 /// assert!(result.is_err());
 /// ```
 pub fn validate_chunk_path(path: impl AsRef<Path>) -> Result<PathBuf, String> {
@@ -419,10 +419,10 @@ pub fn validate_chunk_path(path: impl AsRef<Path>) -> Result<PathBuf, String> {
             return Err(format!("Suspicious filename detected: {:?}", filename));
         }
 
-        // Ensure .gor extension
-        if !name.ends_with(".gor") {
+        // Ensure .kub extension
+        if !name.ends_with(".kub") {
             return Err(format!(
-                "Invalid file extension: expected .gor, got {:?}",
+                "Invalid file extension: expected .kub, got {:?}",
                 filename
             ));
         }
@@ -471,7 +471,7 @@ pub fn validate_chunk_path(path: impl AsRef<Path>) -> Result<PathBuf, String> {
 
         // Get data directory from environment or use default
         let data_dir =
-            std::env::var("TSDB_DATA_DIR").unwrap_or_else(|_| "/data/gorilla-tsdb".to_string());
+            std::env::var("TSDB_DATA_DIR").unwrap_or_else(|_| "/data/Kuba-tsdb".to_string());
         let data_dir = PathBuf::from(data_dir);
 
         // If data directory exists, canonicalize and check containment
@@ -506,7 +506,7 @@ pub fn validate_chunk_path(path: impl AsRef<Path>) -> Result<PathBuf, String> {
 /// # Example
 ///
 /// ```
-/// use gorilla_tsdb::security::check_write_rate_limit;
+/// use kuba_tsdb::security::check_write_rate_limit;
 ///
 /// if check_write_rate_limit() {
 ///     // Proceed with write
@@ -524,7 +524,7 @@ pub fn check_write_rate_limit() -> bool {
 /// # Example
 ///
 /// ```
-/// use gorilla_tsdb::security::check_read_rate_limit;
+/// use kuba_tsdb::security::check_read_rate_limit;
 ///
 /// if check_read_rate_limit() {
 ///     // Proceed with read
@@ -576,20 +576,20 @@ mod tests {
 
     #[test]
     fn test_validate_chunk_path_traversal() {
-        let result = validate_chunk_path("/data/gorilla-tsdb/../etc/passwd");
+        let result = validate_chunk_path("/data/Kuba-tsdb/../etc/passwd");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("traversal"));
     }
 
     #[test]
     fn test_validate_chunk_path_null_byte() {
-        let result = validate_chunk_path("/data/gorilla-tsdb/chunk\0.gor");
+        let result = validate_chunk_path("/data/Kuba-tsdb/chunk\0.kub");
         assert!(result.is_err());
     }
 
     #[test]
     fn test_validate_chunk_path_wrong_extension() {
-        let result = validate_chunk_path("/data/gorilla-tsdb/chunk.txt");
+        let result = validate_chunk_path("/data/Kuba-tsdb/chunk.txt");
         assert!(result.is_err());
     }
 
@@ -632,9 +632,7 @@ mod tests {
     #[test]
     fn test_homograph_detection_safe_ascii() {
         // Normal ASCII should be safe
-        assert!(!contains_homograph_characters(
-            "/data/gorilla-tsdb/chunk.gor"
-        ));
+        assert!(!contains_homograph_characters("/data/Kuba-tsdb/chunk.kub"));
         assert!(!contains_homograph_characters("abcdefghijklmnopqrstuvwxyz"));
         assert!(!contains_homograph_characters("ABCDEFGHIJKLMNOPQRSTUVWXYZ"));
         assert!(!contains_homograph_characters("0123456789"));

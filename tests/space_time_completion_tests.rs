@@ -5,7 +5,7 @@
 //! - Gap 9: Counter reset detection for rate/increase functions
 //! - Gap 10: EXPLAIN with detailed descriptions and execution steps
 
-use gorilla_tsdb::types::{DataPoint, SeriesId};
+use kuba_tsdb::types::{DataPoint, SeriesId};
 
 // ============================================================================
 // Gap 7: LTTB/M4 Downsampling Tests

@@ -200,8 +200,8 @@ impl QueryExecutor {
     /// # Example
     ///
     /// ```rust
-    /// use gorilla_tsdb::query::{QueryExecutor, QueryBuilder, ExecutorConfig};
-    /// use gorilla_tsdb::types::TimeRange;
+    /// use kuba_tsdb::query::{QueryExecutor, QueryBuilder, ExecutorConfig};
+    /// use kuba_tsdb::types::TimeRange;
     ///
     /// // Create executor with config using with_config method
     /// let mut executor = QueryExecutor::with_config(ExecutorConfig::default());

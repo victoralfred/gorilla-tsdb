@@ -5,11 +5,11 @@
 //! observability and debuggability in production.
 //!
 //! Run with: cargo test --test silent_failures_logging_tests
-use gorilla_tsdb::metrics;
-use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
-use gorilla_tsdb::storage::chunk::Chunk;
-use gorilla_tsdb::storage::writer::{ChunkWriter, ChunkWriterConfig};
-use gorilla_tsdb::types::DataPoint;
+use kuba_tsdb::metrics;
+use kuba_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
+use kuba_tsdb::storage::chunk::Chunk;
+use kuba_tsdb::storage::writer::{ChunkWriter, ChunkWriterConfig};
+use kuba_tsdb::types::DataPoint;
 use std::sync::Arc;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -151,7 +151,7 @@ async fn test_checksum_failures_tracked() {
             .unwrap();
     }
 
-    let chunk_path = temp_dir.path().join("test_chunk.gor");
+    let chunk_path = temp_dir.path().join("test_chunk.kub");
     chunk.seal(chunk_path.clone()).await.unwrap();
 
     // Get initial checksum failure count
@@ -373,7 +373,7 @@ async fn test_operations_logged() {
             .unwrap();
     }
 
-    let path = temp_dir.path().join("test.gor");
+    let path = temp_dir.path().join("test.kub");
     let result = chunk.seal(path.clone()).await;
 
     // Operation should complete successfully

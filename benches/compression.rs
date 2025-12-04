@@ -1,7 +1,7 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use gorilla_tsdb::compression::GorillaCompressor;
-use gorilla_tsdb::engine::traits::Compressor;
-use gorilla_tsdb::types::DataPoint;
+use kuba_tsdb::compression::KubaCompressor;
+use kuba_tsdb::engine::traits::Compressor;
+use kuba_tsdb::types::DataPoint;
 use std::hint::black_box;
 
 fn create_regular_points(count: usize) -> Vec<DataPoint> {
@@ -17,7 +17,7 @@ fn bench_compression(c: &mut Criterion) {
 
     for size in [100, 1000, 10000].iter() {
         let points = create_regular_points(*size);
-        let compressor = GorillaCompressor::new();
+        let compressor = KubaCompressor::new();
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
             b.iter(|| {
@@ -36,7 +36,7 @@ fn bench_decompression(c: &mut Criterion) {
 
     for size in [100, 1000, 10000].iter() {
         let points = create_regular_points(*size);
-        let compressor = GorillaCompressor::new();
+        let compressor = KubaCompressor::new();
         let compressed = rt.block_on(compressor.compress(&points)).unwrap();
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {

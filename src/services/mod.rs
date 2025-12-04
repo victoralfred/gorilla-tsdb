@@ -27,7 +27,7 @@
 //! # Example
 //!
 //! ```rust
-//! use gorilla_tsdb::services::{ServiceManager, ServiceConfig};
+//! use kuba_tsdb::services::{ServiceManager, ServiceConfig};
 //!
 //! // Create service manager with default config
 //! let config = ServiceConfig::default();

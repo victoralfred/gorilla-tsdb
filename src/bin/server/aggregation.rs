@@ -4,8 +4,8 @@
 //! for optimal visualization of time-series data.
 
 use super::types::{TimeAggregationInfo, TimeBucket};
-use gorilla_tsdb::query::AggregationFunction as QueryAggFunction;
-use gorilla_tsdb::types::{DataPoint, TimeRange};
+use kuba_tsdb::query::AggregationFunction as QueryAggFunction;
+use kuba_tsdb::types::{DataPoint, TimeRange};
 use tdigest::TDigest;
 
 // =============================================================================

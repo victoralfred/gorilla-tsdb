@@ -16,8 +16,8 @@ use crate::types::{ChunkId, SeriesId};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// Magic number identifying Gorilla chunk format: "GORILLA" in hex
-pub const CHUNK_MAGIC: u32 = 0x474F5249; // "GORI" (first 4 bytes of "GORILLA")
+/// Magic number identifying Kuba chunk format: "Kuba" in hex
+pub const CHUNK_MAGIC: u32 = 0x474F5249; // "GORI" (first 4 bytes of "Kuba")
 
 /// Current chunk format version
 pub const CHUNK_VERSION: u16 = 1;
@@ -94,7 +94,7 @@ impl ChunkHeader {
             compressed_size: 0,
             uncompressed_size: 0,
             checksum: 0,
-            compression_type: CompressionType::Gorilla,
+            compression_type: CompressionType::Kuba,
             flags: ChunkFlags::empty(),
         }
     }
@@ -234,9 +234,9 @@ impl ChunkHeader {
         // Parse compression type
         let compression_type = match bytes[58] {
             0 => CompressionType::None,
-            1 => CompressionType::Gorilla,
+            1 => CompressionType::Kuba,
             2 => CompressionType::Snappy,
-            3 => CompressionType::GorillaSnappy,
+            3 => CompressionType::KubaSnappy,
             n => return Err(format!("Invalid compression type: {}", n)),
         };
 
@@ -265,12 +265,12 @@ impl ChunkHeader {
 pub enum CompressionType {
     /// No compression
     None = 0,
-    /// Gorilla compression (default)
-    Gorilla = 1,
+    /// Kuba compression (default)
+    Kuba = 1,
     /// Snappy compression (for cold storage)
     Snappy = 2,
-    /// Gorilla + Snappy (maximum compression)
-    GorillaSnappy = 3,
+    /// Kuba + Snappy (maximum compression)
+    KubaSnappy = 3,
 }
 
 /// Chunk flags for additional metadata
@@ -368,13 +368,13 @@ impl ChunkMetadata {
 ///
 /// A chunk progresses through these states:
 /// - Active: In-memory, accepting writes
-/// - Sealed: Immutable, written to disk with Gorilla compression
+/// - Sealed: Immutable, written to disk with Kuba compression
 /// - Compressed: Sealed + additional Snappy compression layer
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChunkState {
     /// Chunk is active and accepting writes in memory
     Active,
-    /// Chunk is sealed and stored on disk (Gorilla compressed)
+    /// Chunk is sealed and stored on disk (Kuba compressed)
     Sealed,
     /// Chunk is compressed with Snappy for cold storage
     Compressed,
@@ -405,8 +405,8 @@ enum ChunkData {
 /// # Example
 ///
 /// ```no_run
-/// use gorilla_tsdb::storage::chunk::{Chunk, SealConfig};
-/// use gorilla_tsdb::types::DataPoint;
+/// use kuba_tsdb::storage::chunk::{Chunk, SealConfig};
+/// use kuba_tsdb::types::DataPoint;
 /// use std::time::Duration;
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -420,7 +420,7 @@ enum ChunkData {
 /// // Check if should seal
 /// let config = SealConfig::default();
 /// if chunk.should_seal(&config) {
-///     chunk.seal("/tmp/chunk.gor".into()).await?;
+///     chunk.seal("/tmp/chunk.kub".into()).await?;
 /// }
 /// # Ok(())
 /// # }
@@ -475,7 +475,7 @@ impl SealConfig {
     /// # Example
     ///
     /// ```
-    /// use gorilla_tsdb::storage::chunk::SealConfig;
+    /// use kuba_tsdb::storage::chunk::SealConfig;
     ///
     /// let config = SealConfig::default();
     /// assert!(config.validate().is_ok());
@@ -556,7 +556,7 @@ impl Chunk {
     /// # Example
     ///
     /// ```
-    /// use gorilla_tsdb::storage::chunk::Chunk;
+    /// use kuba_tsdb::storage::chunk::Chunk;
     ///
     /// let chunk = Chunk::new_active(1, 1000);
     /// assert!(chunk.is_active());
@@ -668,8 +668,8 @@ impl Chunk {
     /// # Example
     ///
     /// ```
-    /// use gorilla_tsdb::storage::chunk::Chunk;
-    /// use gorilla_tsdb::types::DataPoint;
+    /// use kuba_tsdb::storage::chunk::Chunk;
+    /// use kuba_tsdb::types::DataPoint;
     ///
     /// let mut chunk = Chunk::new_active(1, 1000);
     /// let point = DataPoint { series_id: 1, timestamp: 1000, value: 42.0 };
@@ -753,8 +753,8 @@ impl Chunk {
     /// # Example
     ///
     /// ```
-    /// use gorilla_tsdb::storage::chunk::{Chunk, SealConfig};
-    /// use gorilla_tsdb::types::DataPoint;
+    /// use kuba_tsdb::storage::chunk::{Chunk, SealConfig};
+    /// use kuba_tsdb::types::DataPoint;
     ///
     /// let mut chunk = Chunk::new_active(1, 100);
     /// let config = SealConfig { max_points: 10, ..Default::default() };
@@ -817,7 +817,7 @@ impl Chunk {
     /// Seal the chunk: transition from Active to Sealed
     ///
     /// This operation:
-    /// 1. Compresses points using Gorilla algorithm
+    /// 1. Compresses points using Kuba algorithm
     /// 2. Writes to disk with header
     /// 3. Frees in-memory data
     /// 4. Updates state to Sealed
@@ -833,20 +833,20 @@ impl Chunk {
     /// # Example
     ///
     /// ```no_run
-    /// use gorilla_tsdb::storage::chunk::Chunk;
-    /// use gorilla_tsdb::types::DataPoint;
+    /// use kuba_tsdb::storage::chunk::Chunk;
+    /// use kuba_tsdb::types::DataPoint;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let mut chunk = Chunk::new_active(1, 1000);
     /// chunk.append(DataPoint { series_id: 1, timestamp: 1000, value: 42.0 })?;
     ///
-    /// chunk.seal("/tmp/chunk.gor".into()).await?;
+    /// chunk.seal("/tmp/chunk.kub".into()).await?;
     /// assert!(chunk.is_sealed());
     /// # Ok(())
     /// # }
     /// ```
     pub async fn seal(&mut self, path: PathBuf) -> Result<(), String> {
-        use crate::compression::gorilla::GorillaCompressor;
+        use crate::compression::kuba::KubaCompressor;
         use crate::engine::traits::Compressor;
         use tokio::fs;
         use tokio::io::AsyncWriteExt;
@@ -892,10 +892,10 @@ impl Chunk {
             })?;
         }
 
-        // P1.2: Compress data with Gorilla on blocking thread pool
+        // P1.2: Compress data with Kuba on blocking thread pool
         // This prevents CPU-intensive compression from blocking async runtime
         let compressed = tokio::task::spawn_blocking(move || {
-            let compressor = GorillaCompressor::new();
+            let compressor = KubaCompressor::new();
             // Use blocking version to avoid async overhead in blocking context
             futures::executor::block_on(compressor.compress(&points))
         })
@@ -911,7 +911,7 @@ impl Chunk {
         header.compressed_size = compressed.compressed_size as u32;
         header.uncompressed_size = compressed.original_size as u32;
         header.checksum = compressed.checksum;
-        header.compression_type = CompressionType::Gorilla;
+        header.compression_type = CompressionType::Kuba;
         header.flags = ChunkFlags::sealed();
 
         // Validate header
@@ -951,7 +951,7 @@ impl Chunk {
 
         // Update chunk state (only after data is safely on disk)
         self.metadata.path = path.clone();
-        self.metadata.compression = CompressionType::Gorilla;
+        self.metadata.compression = CompressionType::Kuba;
         self.metadata.size_bytes = (64 + compressed.compressed_size) as u64;
         self.state = ChunkState::Sealed;
 
@@ -989,10 +989,10 @@ impl Chunk {
     /// # Example
     ///
     /// ```no_run
-    /// use gorilla_tsdb::storage::chunk::Chunk;
+    /// use kuba_tsdb::storage::chunk::Chunk;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let chunk = Chunk::read("/tmp/chunk.gor".into()).await?;
+    /// let chunk = Chunk::read("/tmp/chunk.kub".into()).await?;
     /// assert!(chunk.is_sealed());
     /// println!("Loaded chunk with {} points", chunk.point_count());
     /// # Ok(())
@@ -1026,8 +1026,8 @@ impl Chunk {
             .map_err(|e| format!("Failed to read data: {}", e))?;
 
         // Verify checksum
-        use crate::compression::gorilla::GorillaCompressor;
-        let calculated_checksum = GorillaCompressor::calculate_checksum(&compressed_data);
+        use crate::compression::kuba::KubaCompressor;
+        let calculated_checksum = KubaCompressor::calculate_checksum(&compressed_data);
         if calculated_checksum != header.checksum {
             return Err(format!(
                 "Checksum mismatch: expected {}, got {}",
@@ -1086,17 +1086,17 @@ impl Chunk {
     /// # Example
     ///
     /// ```no_run
-    /// use gorilla_tsdb::storage::chunk::Chunk;
+    /// use kuba_tsdb::storage::chunk::Chunk;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let chunk = Chunk::read("/tmp/chunk.gor".into()).await?;
+    /// let chunk = Chunk::read("/tmp/chunk.kub".into()).await?;
     /// let points = chunk.decompress().await?;
     /// println!("Decompressed {} points", points.len());
     /// # Ok(())
     /// # }
     /// ```
     pub async fn decompress(&self) -> Result<Vec<crate::types::DataPoint>, String> {
-        use crate::compression::gorilla::GorillaCompressor;
+        use crate::compression::kuba::KubaCompressor;
         use crate::engine::traits::{CompressedBlock, Compressor};
         use bytes::Bytes;
         use tokio::fs;
@@ -1165,7 +1165,7 @@ impl Chunk {
 
         // Create CompressedBlock for decompressor
         let compressed_block = CompressedBlock {
-            algorithm_id: "gorilla".to_string(),
+            algorithm_id: "Kuba".to_string(),
             original_size: header.uncompressed_size as usize,
             compressed_size: header.compressed_size as usize,
             checksum: header.checksum,
@@ -1179,7 +1179,7 @@ impl Chunk {
         };
 
         // Decompress
-        let compressor = GorillaCompressor::new();
+        let compressor = KubaCompressor::new();
         compressor
             .decompress(&compressed_block)
             .await
@@ -1274,7 +1274,7 @@ mod tests {
             point_count: 100,
             size_bytes: 1024,
             uncompressed_size: 0,
-            compression: CompressionType::Gorilla,
+            compression: CompressionType::Kuba,
             created_at: 0,
             last_accessed: 0,
         };
@@ -1314,7 +1314,7 @@ mod tests {
         header.compressed_size = 1024;
         header.uncompressed_size = 2048;
         header.checksum = 0x123456789ABCDEF0;
-        header.compression_type = CompressionType::Gorilla;
+        header.compression_type = CompressionType::Kuba;
         header.flags = ChunkFlags::sealed();
 
         // Serialize to bytes
@@ -1516,7 +1516,7 @@ mod tests {
             .unwrap();
 
         // Seal the chunk
-        let path = PathBuf::from("/tmp/test_chunk.gor");
+        let path = PathBuf::from("/tmp/test_chunk.kub");
         let result = chunk.seal(path.clone()).await;
         assert!(result.is_ok());
 
@@ -1525,7 +1525,7 @@ mod tests {
         assert!(!chunk.is_active());
         assert_eq!(chunk.state(), ChunkState::Sealed);
         assert_eq!(chunk.metadata.path, path);
-        assert_eq!(chunk.metadata.compression, CompressionType::Gorilla);
+        assert_eq!(chunk.metadata.compression, CompressionType::Kuba);
 
         // Cannot access points after sealing
         assert!(chunk.points().is_none());
@@ -1535,7 +1535,7 @@ mod tests {
     async fn test_chunk_seal_empty() {
         let mut chunk = Chunk::new_active(1, 100);
 
-        let result = chunk.seal(PathBuf::from("/tmp/test.gor")).await;
+        let result = chunk.seal(PathBuf::from("/tmp/test.kub")).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("empty"));
     }
@@ -1554,7 +1554,7 @@ mod tests {
             .unwrap();
 
         // Seal the chunk
-        chunk.seal(PathBuf::from("/tmp/test.gor")).await.unwrap();
+        chunk.seal(PathBuf::from("/tmp/test.kub")).await.unwrap();
 
         // Try to append after sealing
         let point = DataPoint {
@@ -1614,7 +1614,7 @@ mod tests {
         assert!(chunk.is_active());
 
         // Seal to disk
-        let test_path = PathBuf::from("/tmp/test_chunk_roundtrip.gor");
+        let test_path = PathBuf::from("/tmp/test_chunk_roundtrip.kub");
         chunk
             .seal(test_path.clone())
             .await

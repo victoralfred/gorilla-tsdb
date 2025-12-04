@@ -1,11 +1,11 @@
-# Gorilla TSDB Technical Documentation
+# Kuba TSDB Technical Documentation
 
-This document contains detailed technical information about Gorilla TSDB's architecture, internals, and implementation details. For installation and basic usage, see [README.md](README.md).
+This document contains detailed technical information about Kuba TSDB's architecture, internals, and implementation details. For installation and basic usage, see [README.md](README.md).
 
 ## Table of Contents
 
 - [Architecture](#architecture)
-- [Gorilla Compression](#gorilla-compression)
+- [Kuba Compression](#Kuba-compression)
 - [Pluggable Engine Architecture](#pluggable-engine-architecture)
 - [Storage Layer](#storage-layer)
 - [Redis Integration](#redis-integration)
@@ -33,7 +33,7 @@ This document contains detailed technical information about Gorilla TSDB's archi
         │                    │                        │
         ▼                    ▼                        ▼
 ┌───────────────┐  ┌─────────────────────┐  ┌──────────────────────────┐
-│   Gorilla     │  │   LocalDiskEngine   │  │     RedisTimeIndex       │
+│   Kuba     │  │   LocalDiskEngine   │  │     RedisTimeIndex       │
 │  Compressor   │  │                     │  │                          │
 │               │  │  ┌───────────────┐  │  │  ┌────────────────────┐  │
 │ Delta-of-Delta│  │  │ Active Chunks │  │  │  │ Connection Pool    │  │
@@ -75,16 +75,16 @@ This document contains detailed technical information about Gorilla TSDB's archi
 ```
   Active           Sealed           Compressed
 ┌─────────┐     ┌─────────┐      ┌─────────────┐
-│In-Memory│ ──▶ │  .gor   │ ──▶  │.gor.snappy  │
+│In-Memory│ ──▶ │  .kub   │ ──▶  │.kub.snappy  │
 │BTreeMap │     │  file   │      │   file      │
 └─────────┘     └─────────┘      └─────────────┘
    Write          Read-Only        Archival
    Buffer         Mmap Access      Storage
 ```
 
-## Gorilla Compression
+## Kuba Compression
 
-Implementation of Facebook's Gorilla algorithm optimized for time-series data:
+Implementation of Facebook's Kuba algorithm optimized for time-series data:
 
 - **Delta-of-Delta Timestamp Encoding**: Exploits the regular intervals in time-series data to compress timestamps to just a few bits
 - **XOR-based Value Compression**: Uses XOR encoding for floating-point values, achieving high compression when consecutive values are similar
@@ -123,7 +123,7 @@ pub trait TimeIndex: Send + Sync + 'static {
 ```
 
 **Available Implementations**:
-- **Compressors**: GorillaCompressor (production), ParquetCompressor (planned)
+- **Compressors**: KubaCompressor (production), ParquetCompressor (planned)
 - **Storage Engines**: LocalDiskEngine (production), S3Engine (planned)
 - **Time Indexes**: RedisTimeIndex (production), InMemoryTimeIndex
 
@@ -159,9 +159,9 @@ pub struct ChunkHeader {
 /// Compression types
 pub enum CompressionType {
     None = 0,
-    Gorilla = 1,
+    Kuba = 1,
     Snappy = 2,
-    GorillaSnappy = 3,
+    KubaSnappy = 3,
 }
 ```
 
@@ -332,7 +332,7 @@ pub struct CompressedBlock {
 ### Using the ChunkWriter
 
 ```rust
-use gorilla_tsdb::storage::{ChunkWriter, ChunkWriterConfig};
+use kuba_tsdb::storage::{ChunkWriter, ChunkWriterConfig};
 
 // Create writer with custom config
 let config = ChunkWriterConfig {
@@ -358,7 +358,7 @@ println!("Points written: {}", stats.points_written);
 ### Reading with ChunkReader
 
 ```rust
-use gorilla_tsdb::storage::{ChunkReader, QueryOptions};
+use kuba_tsdb::storage::{ChunkReader, QueryOptions};
 
 let reader = ChunkReader::new();
 
@@ -371,17 +371,17 @@ let options = QueryOptions {
 };
 
 // Single chunk read
-let points = reader.read_chunk("/data/chunk_001.gor", options).await?;
+let points = reader.read_chunk("/data/chunk_001.kub", options).await?;
 
 // Parallel multi-chunk read
-let chunks = vec!["/data/chunk_001.gor", "/data/chunk_002.gor"];
+let chunks = vec!["/data/chunk_001.kub", "/data/chunk_002.kub"];
 let all_points = reader.read_chunks_parallel(chunks, options).await?;
 ```
 
 ## Project Structure
 
 ```
-gorilla-tsdb/
+Kuba-tsdb/
 ├── Cargo.toml
 ├── README.md                    # Quick start and installation
 ├── TECHNICAL.md                 # This file
@@ -389,10 +389,10 @@ gorilla-tsdb/
 │   ├── lib.rs                   # Library entry point
 │   ├── types.rs                 # Core data types
 │   ├── error.rs                 # Error definitions
-│   ├── compression/             # Gorilla compression
+│   ├── compression/             # Kuba compression
 │   │   ├── mod.rs
 │   │   ├── bit_stream.rs        # Bit-level I/O
-│   │   └── gorilla.rs           # Gorilla algorithm
+│   │   └── Kuba.rs           # Kuba algorithm
 │   ├── storage/                 # Chunk storage
 │   │   ├── mod.rs
 │   │   ├── chunk.rs             # Chunk structures
@@ -438,7 +438,7 @@ gorilla-tsdb/
 
 | Phase | Component | Status | Lines of Code |
 |-------|-----------|--------|---------------|
-| 1 | Gorilla Compression | Complete | ~1,200 |
+| 1 | Kuba Compression | Complete | ~1,200 |
 | 1.5 | Bug Fixes & Hardening | Complete | +200 |
 | 2 | Storage Layer | Complete | ~4,400 |
 | 3 | Redis Integration | Complete | ~4,600 |

@@ -339,7 +339,7 @@ pub const MAX_REDIS_KEY_COMPONENT_LENGTH: usize = 128;
 /// # Examples
 ///
 /// ```
-/// use gorilla_tsdb::ingestion::schema::sanitize::sanitize_for_redis_key;
+/// use kuba_tsdb::ingestion::schema::sanitize::sanitize_for_redis_key;
 ///
 /// // Normal values pass through (with trimming)
 /// assert_eq!(sanitize_for_redis_key("server1"), "server1");
@@ -401,7 +401,7 @@ pub fn sanitize_for_redis_key(value: &str) -> String {
 ///
 /// ```
 /// use std::collections::HashMap;
-/// use gorilla_tsdb::ingestion::schema::sanitize::sanitize_tags_for_redis;
+/// use kuba_tsdb::ingestion::schema::sanitize::sanitize_tags_for_redis;
 ///
 /// let mut tags = HashMap::new();
 /// tags.insert("host:name".to_string(), "server:1".to_string());

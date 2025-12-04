@@ -5,10 +5,10 @@
 //! addressed and cannot be exploited.
 //!
 //! Run with: cargo test --test security_vulnerabilities_tests
-use gorilla_tsdb::compression::gorilla::GorillaCompressor;
-use gorilla_tsdb::engine::traits::{BlockMetadata, CompressedBlock, Compressor};
-use gorilla_tsdb::security;
-use gorilla_tsdb::types::DataPoint;
+use kuba_tsdb::compression::kuba::KubaCompressor;
+use kuba_tsdb::engine::traits::{BlockMetadata, CompressedBlock, Compressor};
+use kuba_tsdb::security;
+use kuba_tsdb::types::DataPoint;
 use tempfile::TempDir;
 
 // ============================================================================
@@ -79,7 +79,7 @@ fn test_sv1_5_symlink_attack() {
     symlink("/tmp", &symlink_path).unwrap();
 
     // Try to use symlink in chunk path (use absolute path)
-    let malicious_path = data_dir.join("malicious_link/stolen_data.gor");
+    let malicious_path = data_dir.join("malicious_link/stolen_data.kub");
 
     std::env::set_var("TSDB_DATA_DIR", data_dir.to_str().unwrap());
 
@@ -107,13 +107,23 @@ fn test_sv1_6_valid_paths_accepted() {
     let temp_dir = TempDir::new().unwrap();
     std::env::set_var("TSDB_DATA_DIR", temp_dir.path().to_str().unwrap());
 
-    // Valid relative path
-    let result = security::validate_chunk_path("series_1/chunk_123.gor");
+    // Create the directory structure for valid path tests
+    let series_dir = temp_dir.path().join("series_1");
+    std::fs::create_dir_all(&series_dir).unwrap();
+
+    // Valid path within temp directory
+    let valid_path = series_dir.join("chunk_123.kub");
+    let result = security::validate_chunk_path(&valid_path);
     assert!(result.is_ok(), "Should accept valid path: {:?}", result);
 
+    // Create nested directory structure
+    let nested_dir = series_dir.join("2024").join("11");
+    std::fs::create_dir_all(&nested_dir).unwrap();
+
     // Valid path with subdirectories
-    let result = security::validate_chunk_path("series_1/2024/11/chunk_456.gor");
-    assert!(result.is_ok(), "Should accept valid nested path");
+    let nested_path = nested_dir.join("chunk_456.kub");
+    let result = security::validate_chunk_path(&nested_path);
+    assert!(result.is_ok(), "Should accept valid nested path: {:?}", result);
 }
 
 /// SV-1.7: Test invalid file extensions are rejected
@@ -124,14 +134,14 @@ fn test_sv1_7_invalid_extensions() {
 
     // Wrong extension
     let result = security::validate_chunk_path("chunk.exe");
-    assert!(result.is_err(), "Should reject non-.gor extension");
+    assert!(result.is_err(), "Should reject non-.kub extension");
 
     // No extension
     let result = security::validate_chunk_path("chunk");
     assert!(result.is_err(), "Should reject missing extension");
 
     // Double extension
-    let result = security::validate_chunk_path("chunk.gor.txt");
+    let result = security::validate_chunk_path("chunk.kub.txt");
     assert!(result.is_err(), "Should reject double extension");
 }
 
@@ -142,7 +152,7 @@ fn test_sv1_7_invalid_extensions() {
 /// SV-2.1: Test timestamp overflow in compression
 #[tokio::test]
 async fn test_sv2_1_timestamp_overflow_compression() {
-    let compressor = GorillaCompressor::new();
+    let compressor = KubaCompressor::new();
 
     // Points with extreme timestamps that would overflow
     let points = vec![
@@ -186,7 +196,7 @@ async fn test_sv2_1_timestamp_overflow_compression() {
 /// SV-2.2: Test non-monotonic timestamps are rejected
 #[tokio::test]
 async fn test_sv2_2_non_monotonic_timestamps() {
-    let compressor = GorillaCompressor::new();
+    let compressor = KubaCompressor::new();
 
     // Points not in ascending order
     let points = vec![
@@ -217,7 +227,7 @@ async fn test_sv2_2_non_monotonic_timestamps() {
 /// SV-2.3: Test reserved timestamp values
 #[tokio::test]
 async fn test_sv2_3_reserved_timestamp_values() {
-    let compressor = GorillaCompressor::new();
+    let compressor = KubaCompressor::new();
 
     // Test i64::MIN
     let result1 = compressor
@@ -247,7 +257,7 @@ async fn test_sv2_3_reserved_timestamp_values() {
 /// SV-2.4: Test delta-of-delta overflow
 #[tokio::test]
 async fn test_sv2_4_delta_of_delta_overflow() {
-    let compressor = GorillaCompressor::new();
+    let compressor = KubaCompressor::new();
 
     // Carefully crafted points that cause DoD overflow
     let points = vec![
@@ -412,7 +422,7 @@ fn test_sv5_1_file_permission_validation() {
     use std::os::unix::fs::PermissionsExt;
 
     let temp_dir = TempDir::new().unwrap();
-    let file_path = temp_dir.path().join("test.gor");
+    let file_path = temp_dir.path().join("test.kub");
 
     // Create file with world-readable permissions
     fs::File::create(&file_path).unwrap();
@@ -435,7 +445,7 @@ fn test_sv5_2_file_ownership_validation() {
     use std::fs;
 
     let temp_dir = TempDir::new().unwrap();
-    let file_path = temp_dir.path().join("test.gor");
+    let file_path = temp_dir.path().join("test.kub");
 
     fs::File::create(&file_path).unwrap();
 
@@ -458,7 +468,7 @@ fn test_sv5_2_file_ownership_validation() {
 /// Test compression with malicious inputs
 #[tokio::test]
 async fn test_compression_malicious_inputs() {
-    let compressor = GorillaCompressor::new();
+    let compressor = KubaCompressor::new();
 
     // Extremely large value
     let result1 = compressor
@@ -496,11 +506,11 @@ async fn test_compression_malicious_inputs() {
 /// Test decompression with corrupted metadata
 #[tokio::test]
 async fn test_decompression_corrupted_metadata() {
-    let compressor = GorillaCompressor::new();
+    let compressor = KubaCompressor::new();
 
     // Create block with mismatched metadata
     let block = CompressedBlock {
-        algorithm_id: "gorilla".to_string(),
+        algorithm_id: "kuba".to_string(),
         original_size: 1,
         compressed_size: 100,
         checksum: 0,
@@ -522,7 +532,7 @@ async fn test_decompression_corrupted_metadata() {
 /// Test timestamp validation catches all edge cases
 #[tokio::test]
 async fn test_timestamp_validation_comprehensive() {
-    let compressor = GorillaCompressor::new();
+    let compressor = KubaCompressor::new();
 
     // Test case 1: Duplicate timestamps
     let dup_result = compressor
@@ -579,7 +589,7 @@ async fn test_timestamp_validation_comprehensive() {
 #[tokio::test]
 #[ignore = "Timeout on CI platform, test pass on local dev."]
 async fn test_resource_exhaustion_prevention() {
-    let compressor = GorillaCompressor::new();
+    let compressor = KubaCompressor::new();
 
     // Try to compress enormous number of points
     let huge_points: Vec<DataPoint> = (0..20_000_000)

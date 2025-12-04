@@ -12,7 +12,7 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use gorilla_tsdb::cache::LocalMetadataCache;
+//! use kuba_tsdb::cache::LocalMetadataCache;
 //!
 //! let cache = LocalMetadataCache::new(1000, 60_000); // 1000 entries, 60s TTL
 //!

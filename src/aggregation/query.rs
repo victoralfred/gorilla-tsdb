@@ -37,7 +37,7 @@
 //! # Example
 //!
 //! ```rust
-//! use gorilla_tsdb::aggregation::{AggQueryBuilder, AggregateFunction};
+//! use kuba_tsdb::aggregation::{AggQueryBuilder, AggregateFunction};
 //! use std::time::Duration;
 //!
 //! // Build a query

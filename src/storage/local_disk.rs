@@ -41,7 +41,7 @@ struct PersistedSeriesEntry {
 /// ```text
 /// base_path/
 ///   series_{id}/
-///     chunk_{timestamp}.gor    - Gorilla-compressed data
+///     chunk_{timestamp}.kub    - Kuba-compressed data
 ///     chunk_{timestamp}.snappy - Snappy-compressed cold storage
 ///     metadata.json            - Series metadata
 /// ```
@@ -49,8 +49,8 @@ struct PersistedSeriesEntry {
 /// # Example
 ///
 /// ```rust,no_run
-/// use gorilla_tsdb::storage::LocalDiskEngine;
-/// use gorilla_tsdb::engine::traits::StorageEngine;
+/// use kuba_tsdb::storage::LocalDiskEngine;
+/// use kuba_tsdb::engine::traits::StorageEngine;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let engine = LocalDiskEngine::new("/tmp/tsdb".into())?;
@@ -114,8 +114,8 @@ impl LocalDiskEngine {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use gorilla_tsdb::storage::LocalDiskEngine;
-    /// use gorilla_tsdb::engine::traits::StorageEngine;
+    /// use kuba_tsdb::storage::LocalDiskEngine;
+    /// use kuba_tsdb::engine::traits::StorageEngine;
     ///
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let engine = LocalDiskEngine::new("/tmp/tsdb".into())?;
@@ -188,9 +188,9 @@ impl LocalDiskEngine {
     ) -> PathBuf {
         let extension = match compression {
             CompressionType::None => "raw",
-            CompressionType::Gorilla => "gor",
+            CompressionType::Kuba => "kub",
             CompressionType::Snappy => "snappy",
-            CompressionType::GorillaSnappy => "gor.snappy",
+            CompressionType::KubaSnappy => "kub.snappy",
         };
 
         self.series_path(series_id)
@@ -294,7 +294,7 @@ impl LocalDiskEngine {
 
         while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("gor") {
+            if path.extension().and_then(|e| e.to_str()) == Some("kub") {
                 files_checked += 1;
                 // Read chunk header to get metadata
                 let mut file = match fs::File::open(&path).await {
@@ -331,7 +331,7 @@ impl LocalDiskEngine {
 
                 let file_metadata = fs::metadata(&path).await?;
 
-                // Parse chunk_id from filename (chunk_{uuid}.gor)
+                // Parse chunk_id from filename (chunk_{uuid}.kub)
                 // Use unchecked since this is internal trusted storage
                 let chunk_id = path
                     .file_stem()
@@ -554,7 +554,7 @@ impl StorageEngine for LocalDiskEngine {
         fs::create_dir_all(&series_dir).await?;
 
         // Determine chunk path
-        let path = self.chunk_path(series_id, &chunk_id, CompressionType::Gorilla);
+        let path = self.chunk_path(series_id, &chunk_id, CompressionType::Kuba);
 
         // Create chunk header
         let mut header = ChunkHeader::new(series_id);
@@ -564,7 +564,7 @@ impl StorageEngine for LocalDiskEngine {
         header.compressed_size = data.compressed_size as u32;
         header.uncompressed_size = data.original_size as u32;
         header.checksum = data.checksum;
-        header.compression_type = CompressionType::Gorilla;
+        header.compression_type = CompressionType::Kuba;
         header.flags = crate::storage::chunk::ChunkFlags::sealed();
 
         // Validate header before writing
@@ -605,7 +605,7 @@ impl StorageEngine for LocalDiskEngine {
                 point_count: data.metadata.point_count as u32,
                 size_bytes: total_size,
                 uncompressed_size: data.original_size as u64,
-                compression: CompressionType::Gorilla,
+                compression: CompressionType::Kuba,
                 created_at: chrono::Utc::now().timestamp_millis(),
                 last_accessed: chrono::Utc::now().timestamp_millis(),
             });
@@ -678,7 +678,7 @@ impl StorageEngine for LocalDiskEngine {
         // Verify checksum
         // ERR-001: Use specific ChecksumMismatch error with expected/actual values
         let calculated_checksum =
-            crate::compression::gorilla::GorillaCompressor::calculate_checksum(&compressed_data);
+            crate::compression::kuba::KubaCompressor::calculate_checksum(&compressed_data);
         if header.checksum != calculated_checksum {
             return Err(StorageError::ChecksumMismatch {
                 expected: header.checksum,
@@ -704,7 +704,7 @@ impl StorageEngine for LocalDiskEngine {
 
         // Construct CompressedBlock
         Ok(crate::engine::traits::CompressedBlock {
-            algorithm_id: "gorilla".to_string(),
+            algorithm_id: "Kuba".to_string(),
             original_size: header.uncompressed_size as usize,
             compressed_size: header.compressed_size as usize,
             checksum: header.checksum,
@@ -863,7 +863,7 @@ impl StorageEngine for LocalDiskEngine {
     ///
     /// ```rust,ignore
     /// use futures::StreamExt;
-    /// use gorilla_tsdb::types::TimeRange;
+    /// use kuba_tsdb::types::TimeRange;
     ///
     /// let range = TimeRange::new(0, 1000).unwrap();
     /// let mut stream = engine.stream_chunks(series_id, range);
@@ -979,7 +979,7 @@ impl StorageEngine for LocalDiskEngine {
                     // Verify checksum
                     // ERR-001: Use specific ChecksumMismatch error with expected/actual values
                     let calculated_checksum =
-                        crate::compression::gorilla::GorillaCompressor::calculate_checksum(
+                        crate::compression::kuba::KubaCompressor::calculate_checksum(
                             &compressed_data,
                         );
                     if header.checksum != calculated_checksum {
@@ -998,7 +998,7 @@ impl StorageEngine for LocalDiskEngine {
 
                     // Return the CompressedBlock
                     Ok(crate::engine::traits::CompressedBlock {
-                        algorithm_id: "gorilla".to_string(),
+                        algorithm_id: "Kuba".to_string(),
                         original_size: header.uncompressed_size as usize,
                         compressed_size: header.compressed_size as usize,
                         checksum: header.checksum,
@@ -1058,7 +1058,7 @@ impl StorageEngine for LocalDiskEngine {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use gorilla_tsdb::storage::LocalDiskEngine;
+    /// use kuba_tsdb::storage::LocalDiskEngine;
     ///
     /// let report = engine.maintenance().await?;
     /// println!("Maintenance complete:");
@@ -1168,7 +1168,7 @@ impl StorageEngine for LocalDiskEngine {
                         if !chunk_path
                             .extension()
                             .and_then(|e| e.to_str())
-                            .map(|e| ["gor", "snappy", "raw"].contains(&e))
+                            .map(|e| ["kub", "snappy", "raw"].contains(&e))
                             .unwrap_or(false)
                         {
                             continue;
@@ -1236,18 +1236,18 @@ mod tests {
         let chunk_id = ChunkId::from_string("550e8400-e29b-41d4-a716-446655440000").unwrap();
 
         // Test different compression types
-        let path_gor = engine.chunk_path(1, &chunk_id, CompressionType::Gorilla);
-        assert!(path_gor.to_string_lossy().contains("series_1"));
-        assert!(path_gor
+        let path_kub = engine.chunk_path(1, &chunk_id, CompressionType::Kuba);
+        assert!(path_kub.to_string_lossy().contains("series_1"));
+        assert!(path_kub
             .to_string_lossy()
             .contains("chunk_550e8400-e29b-41d4-a716-446655440000"));
-        assert!(path_gor.to_string_lossy().ends_with(".gor"));
+        assert!(path_kub.to_string_lossy().ends_with(".kub"));
 
         let path_snappy = engine.chunk_path(1, &chunk_id, CompressionType::Snappy);
         assert!(path_snappy.to_string_lossy().ends_with(".snappy"));
 
-        let path_both = engine.chunk_path(1, &chunk_id, CompressionType::GorillaSnappy);
-        assert!(path_both.to_string_lossy().ends_with(".gor.snappy"));
+        let path_both = engine.chunk_path(1, &chunk_id, CompressionType::KubaSnappy);
+        assert!(path_both.to_string_lossy().ends_with(".kub.snappy"));
 
         let path_none = engine.chunk_path(1, &chunk_id, CompressionType::None);
         assert!(path_none.to_string_lossy().ends_with(".raw"));
@@ -1291,11 +1291,10 @@ mod tests {
         // Write chunks with different time ranges
         for i in 0..5 {
             let test_data = vec![i as u8; 10];
-            let checksum =
-                crate::compression::gorilla::GorillaCompressor::calculate_checksum(&test_data);
+            let checksum = crate::compression::kuba::KubaCompressor::calculate_checksum(&test_data);
 
             let block = CompressedBlock {
-                algorithm_id: "gorilla".to_string(),
+                algorithm_id: "Kuba".to_string(),
                 original_size: 20,
                 compressed_size: test_data.len(),
                 checksum,
@@ -1349,11 +1348,10 @@ mod tests {
 
         // Create test data
         let test_data = vec![1u8, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        let checksum =
-            crate::compression::gorilla::GorillaCompressor::calculate_checksum(&test_data);
+        let checksum = crate::compression::kuba::KubaCompressor::calculate_checksum(&test_data);
 
         let block = CompressedBlock {
-            algorithm_id: "gorilla".to_string(),
+            algorithm_id: "Kuba".to_string(),
             original_size: 100,
             compressed_size: test_data.len(),
             checksum,
@@ -1390,7 +1388,7 @@ mod tests {
         let read_block = engine.read_chunk(&location).await.unwrap();
 
         // Verify read data matches written data
-        assert_eq!(read_block.algorithm_id, "gorilla");
+        assert_eq!(read_block.algorithm_id, "Kuba");
         assert_eq!(read_block.original_size, 100);
         assert_eq!(read_block.compressed_size, test_data.len());
         assert_eq!(read_block.checksum, checksum);
@@ -1415,11 +1413,10 @@ mod tests {
 
         // Create and write test chunk
         let test_data = vec![1u8; 100];
-        let checksum =
-            crate::compression::gorilla::GorillaCompressor::calculate_checksum(&test_data);
+        let checksum = crate::compression::kuba::KubaCompressor::calculate_checksum(&test_data);
 
         let block = CompressedBlock {
-            algorithm_id: "gorilla".to_string(),
+            algorithm_id: "Kuba".to_string(),
             original_size: 200,
             compressed_size: test_data.len(),
             checksum,
@@ -1466,11 +1463,10 @@ mod tests {
         // Write chunks for multiple series
         for series_id in 1..=3 {
             let test_data = vec![series_id as u8; 50];
-            let checksum =
-                crate::compression::gorilla::GorillaCompressor::calculate_checksum(&test_data);
+            let checksum = crate::compression::kuba::KubaCompressor::calculate_checksum(&test_data);
 
             let block = CompressedBlock {
-                algorithm_id: "gorilla".to_string(),
+                algorithm_id: "Kuba".to_string(),
                 original_size: 100,
                 compressed_size: test_data.len(),
                 checksum,
@@ -1510,7 +1506,7 @@ mod tests {
         // Try to read non-existent chunk
         let location = ChunkLocation {
             engine_id: "local-disk-v1".to_string(),
-            path: "/nonexistent/chunk.gor".to_string(),
+            path: "/nonexistent/chunk.kub".to_string(),
             offset: Some(0),
             size: Some(100),
         };
@@ -1529,7 +1525,7 @@ mod tests {
         // Try to read chunk with wrong engine ID
         let location = ChunkLocation {
             engine_id: "wrong-engine".to_string(),
-            path: "/some/path.gor".to_string(),
+            path: "/some/path.kub".to_string(),
             offset: Some(0),
             size: Some(100),
         };
@@ -1552,11 +1548,10 @@ mod tests {
 
         // Write a valid chunk
         let test_data = vec![1u8; 100];
-        let checksum =
-            crate::compression::gorilla::GorillaCompressor::calculate_checksum(&test_data);
+        let checksum = crate::compression::kuba::KubaCompressor::calculate_checksum(&test_data);
 
         let block = CompressedBlock {
-            algorithm_id: "gorilla".to_string(),
+            algorithm_id: "Kuba".to_string(),
             original_size: 200,
             compressed_size: test_data.len(),
             checksum,
@@ -1613,11 +1608,10 @@ mod tests {
             let engine = LocalDiskEngine::new(temp_dir.path().to_path_buf()).unwrap();
 
             let test_data = vec![42u8; 50];
-            let checksum =
-                crate::compression::gorilla::GorillaCompressor::calculate_checksum(&test_data);
+            let checksum = crate::compression::kuba::KubaCompressor::calculate_checksum(&test_data);
 
             let block = CompressedBlock {
-                algorithm_id: "gorilla".to_string(),
+                algorithm_id: "Kuba".to_string(),
                 original_size: 100,
                 compressed_size: test_data.len(),
                 checksum,
@@ -1680,11 +1674,10 @@ mod tests {
         // Write multiple chunks for a series
         for i in 0..5 {
             let test_data = vec![i as u8; 20];
-            let checksum =
-                crate::compression::gorilla::GorillaCompressor::calculate_checksum(&test_data);
+            let checksum = crate::compression::kuba::KubaCompressor::calculate_checksum(&test_data);
 
             let block = CompressedBlock {
-                algorithm_id: "gorilla".to_string(),
+                algorithm_id: "Kuba".to_string(),
                 original_size: 40,
                 compressed_size: test_data.len(),
                 checksum,
@@ -1707,7 +1700,7 @@ mod tests {
         let mut count = 0;
         while let Some(result) = stream.next().await {
             let block = result.unwrap();
-            assert_eq!(block.algorithm_id, "gorilla");
+            assert_eq!(block.algorithm_id, "Kuba");
             assert_eq!(block.metadata.series_id, 1);
             count += 1;
         }
@@ -1779,7 +1772,7 @@ mod tests {
         let series_dir = temp_dir.path().join("series_1");
         fs::create_dir_all(&series_dir).await.unwrap();
 
-        let orphan_path = series_dir.join("chunk_orphan.gor");
+        let orphan_path = series_dir.join("chunk_orphan.kub");
         let mut file = fs::File::create(&orphan_path).await.unwrap();
         file.write_all(&[0u8; 100]).await.unwrap();
         file.sync_all().await.unwrap();
@@ -1807,11 +1800,10 @@ mod tests {
         // Write a valid chunk with recent timestamp
         let now = chrono::Utc::now().timestamp_millis();
         let test_data = vec![1u8; 50];
-        let checksum =
-            crate::compression::gorilla::GorillaCompressor::calculate_checksum(&test_data);
+        let checksum = crate::compression::kuba::KubaCompressor::calculate_checksum(&test_data);
 
         let block = CompressedBlock {
-            algorithm_id: "gorilla".to_string(),
+            algorithm_id: "Kuba".to_string(),
             original_size: 100,
             compressed_size: test_data.len(),
             checksum,

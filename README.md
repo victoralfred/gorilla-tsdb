@@ -1,13 +1,10 @@
-[![Rust CI/CD](https://github.com/victoralfred/gorilla-tsdb/actions/workflows/rust.yml/badge.svg)](https://github.com/victoralfred/gorilla-tsdb/actions/workflows/rust.yml)
-
 # KUBA TSDB
 
-A high-performance time-series database written in Rust, featuring Facebook's Gorilla compression algorithm for 10:1+ compression ratios and sub-millisecond query latencies.
+A high-performance time-series database written in Rust, an efficient compression algorithm for 10:1+ compression ratios and sub-millisecond query latencies.
 
 ## Features
 
 - **High Performance**: >2M points/second ingestion, sub-millisecond queries
-- **Efficient Compression**: 10:1+ compression using Gorilla algorithm
 - **SQL & PromQL Support**: Query with familiar syntax
 - **Time-Windowed Aggregations**: Auto-interval bucketing for visualization
 - **HTTP REST API**: Easy integration with any language/framework
@@ -23,8 +20,8 @@ A high-performance time-series database written in Rust, featuring Facebook's Go
 ### Build from Source
 
 ```bash
-git clone https://github.com/victoralfred/gorilla-tsdb.git
-cd gorilla-tsdb/source
+git clone https://github.com/victoralfred/kuba-tsdb.git
+cd kube-tsdb/source
 
 # Build release binary
 cargo build --release
@@ -316,7 +313,7 @@ SELECT sum(value) FROM metric GROUP BY time(1h)
 ## Library Usage
 
 ```rust
-use gorilla_tsdb::{TimeSeriesDBBuilder, DatabaseConfig, DataPoint};
+use kuba_tsdb::{TimeSeriesDBBuilder, DatabaseConfig, DataPoint};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

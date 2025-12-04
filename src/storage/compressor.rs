@@ -24,7 +24,7 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use gorilla_tsdb::storage::compressor::{CompressionService, CompressionConfig};
+//! use kuba_tsdb::storage::compressor::{CompressionService, CompressionConfig};
 //! use std::path::PathBuf;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -72,7 +72,7 @@ pub struct CompressionConfig {
     /// Note: Snappy doesn't support levels, this is for future extensibility
     pub compression_level: u8,
 
-    /// Delete original .gor files after successful compression
+    /// Delete original .kub files after successful compression
     pub delete_original: bool,
 }
 
@@ -419,8 +419,8 @@ impl CompressionService {
             while let Some(chunk_entry) = chunk_files.next_entry().await? {
                 let chunk_path = chunk_entry.path();
 
-                // Only process .gor files (sealed, not yet compressed)
-                if chunk_path.extension().and_then(|e| e.to_str()) != Some("gor") {
+                // Only process .kub files (sealed, not yet compressed)
+                if chunk_path.extension().and_then(|e| e.to_str()) != Some("kub") {
                     continue;
                 }
 
@@ -486,7 +486,7 @@ impl CompressionService {
         let snappy_path = task.chunk_path.with_extension("snappy");
         fs::write(&snappy_path, &compressed).await?;
 
-        // Delete original .gor file to save disk space (if configured)
+        // Delete original .kub file to save disk space (if configured)
         if delete_original {
             fs::remove_file(&task.chunk_path).await?;
         }
@@ -590,7 +590,7 @@ mod tests {
     #[tokio::test]
     async fn test_compress_chunk() {
         let temp_dir = TempDir::new().unwrap();
-        let chunk_path = temp_dir.path().join("test_chunk.gor");
+        let chunk_path = temp_dir.path().join("test_chunk.kub");
 
         // Create test chunk with compressible data
         let test_data = vec![0u8; 10000]; // Highly compressible
@@ -624,7 +624,7 @@ mod tests {
         fs::create_dir(&series_dir).await.unwrap();
 
         // Create an old sealed chunk
-        let chunk_path = series_dir.join("chunk_0.gor");
+        let chunk_path = series_dir.join("chunk_0.kub");
         fs::write(&chunk_path, b"test data").await.unwrap();
 
         // Wait to ensure age

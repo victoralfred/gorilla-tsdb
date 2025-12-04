@@ -11,8 +11,8 @@
 /// 8. Memory management
 /// 9. Error handling
 /// 10. Performance characteristics
-use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
-use gorilla_tsdb::types::DataPoint;
+use kuba_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
+use kuba_tsdb::types::DataPoint;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -133,7 +133,7 @@ async fn test_seal_while_appending() {
     thread::sleep(Duration::from_millis(500));
 
     // Try to seal
-    let result = chunk.seal("/tmp/test_seal_concurrent.gor".into()).await;
+    let result = chunk.seal("/tmp/test_seal_concurrent.kub".into()).await;
     *sealed.lock().unwrap() = true;
 
     writer.join().expect("Writer panicked");
@@ -162,9 +162,9 @@ async fn test_concurrent_seal() {
     let chunk1 = Arc::clone(&chunk);
     let chunk2 = Arc::clone(&chunk);
 
-    let h1 = tokio::spawn(async move { chunk1.seal("/tmp/seal1.gor".into()).await });
+    let h1 = tokio::spawn(async move { chunk1.seal("/tmp/seal1.kub".into()).await });
 
-    let h2 = tokio::spawn(async move { chunk2.seal("/tmp/seal2.gor".into()).await });
+    let h2 = tokio::spawn(async move { chunk2.seal("/tmp/seal2.kub".into()).await });
 
     let r1 = h1.await.unwrap();
     let r2 = h2.await.unwrap();
@@ -555,7 +555,7 @@ async fn test_append_after_seal() {
 
     // Seal
     chunk
-        .seal("/tmp/test_append_after_seal.gor".into())
+        .seal("/tmp/test_append_after_seal.kub".into())
         .await
         .unwrap();
 
@@ -585,12 +585,12 @@ async fn test_double_seal() {
 
     // First seal
     chunk
-        .seal("/tmp/test_double_seal1.gor".into())
+        .seal("/tmp/test_double_seal1.kub".into())
         .await
         .unwrap();
 
     // Second seal
-    let result = chunk.seal("/tmp/test_double_seal2.gor".into()).await;
+    let result = chunk.seal("/tmp/test_double_seal2.kub".into()).await;
 
     assert!(result.is_err());
 }
@@ -600,7 +600,7 @@ async fn test_double_seal() {
 async fn test_seal_empty() {
     let chunk = ActiveChunk::new(1, 100, SealConfig::default());
 
-    let result = chunk.seal("/tmp/test_seal_empty.gor".into()).await;
+    let result = chunk.seal("/tmp/test_seal_empty.kub".into()).await;
 
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("empty"));
@@ -619,7 +619,7 @@ async fn test_seal_single_point() {
         })
         .unwrap();
 
-    let result = chunk.seal("/tmp/test_seal_single.gor".into()).await;
+    let result = chunk.seal("/tmp/test_seal_single.kub".into()).await;
 
     assert!(result.is_ok());
 }
@@ -670,7 +670,7 @@ async fn test_seal_invalid_path() {
         .unwrap();
 
     // Try to seal to invalid path
-    let result = chunk.seal("/nonexistent/directory/chunk.gor".into()).await;
+    let result = chunk.seal("/nonexistent/directory/chunk.kub".into()).await;
 
     // Should handle error gracefully
     assert!(result.is_err());

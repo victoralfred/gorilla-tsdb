@@ -22,7 +22,7 @@
 //! # Example
 //!
 //! ```rust
-//! use gorilla_tsdb::aggregation::{CardinalityController, CardinalityConfig};
+//! use kuba_tsdb::aggregation::{CardinalityController, CardinalityConfig};
 //!
 //! let config = CardinalityConfig::default();
 //! let controller = CardinalityController::new(config);

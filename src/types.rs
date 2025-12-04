@@ -14,7 +14,7 @@
 //! # Example
 //!
 //! ```rust
-//! use gorilla_tsdb::types::{DataPoint, SeriesId, TimeRange, TagSet};
+//! use kuba_tsdb::types::{DataPoint, SeriesId, TimeRange, TagSet};
 //!
 //! // Create a data point
 //! let point = DataPoint::new(1, 1000, 42.5);
@@ -41,7 +41,7 @@ use std::fmt;
 /// # Example
 ///
 /// ```rust
-/// use gorilla_tsdb::types::SeriesId;
+/// use kuba_tsdb::types::SeriesId;
 ///
 /// let series_id: SeriesId = 12345678901234567890;
 /// ```
@@ -66,7 +66,7 @@ pub type SeriesId = u128;
 /// # Example
 ///
 /// ```rust
-/// use gorilla_tsdb::types::generate_series_id;
+/// use kuba_tsdb::types::generate_series_id;
 /// use std::collections::HashMap;
 ///
 /// let mut tags = HashMap::new();
@@ -131,7 +131,7 @@ pub fn generate_series_id_cow<'a>(
 /// # Example
 ///
 /// ```rust
-/// use gorilla_tsdb::types::current_time_ms;
+/// use kuba_tsdb::types::current_time_ms;
 ///
 /// let now = current_time_ms();
 /// assert!(now > 0);
@@ -152,7 +152,7 @@ pub fn current_time_ms() -> i64 {
 /// # Example
 ///
 /// ```rust
-/// use gorilla_tsdb::types::current_time_ns;
+/// use kuba_tsdb::types::current_time_ns;
 ///
 /// let now = current_time_ns();
 /// assert!(now > 0);
@@ -184,7 +184,7 @@ impl ChunkId {
     /// # Example
     ///
     /// ```rust
-    /// use gorilla_tsdb::types::ChunkId;
+    /// use kuba_tsdb::types::ChunkId;
     ///
     /// let chunk_id = ChunkId::new();
     /// println!("Generated chunk ID: {}", chunk_id);
@@ -210,7 +210,7 @@ impl ChunkId {
     /// # Example
     ///
     /// ```rust
-    /// use gorilla_tsdb::types::ChunkId;
+    /// use kuba_tsdb::types::ChunkId;
     ///
     /// // Valid UUID
     /// let id = ChunkId::from_string("550e8400-e29b-41d4-a716-446655440000").unwrap();
@@ -295,7 +295,7 @@ impl std::error::Error for ChunkIdError {}
 /// # Example
 ///
 /// ```rust
-/// use gorilla_tsdb::types::ChunkId;
+/// use kuba_tsdb::types::ChunkId;
 /// use std::convert::TryFrom;
 ///
 /// // Valid UUID
@@ -335,7 +335,7 @@ impl TryFrom<String> for ChunkId {
 ///
 /// The fundamental unit of time-series data, consisting of a series identifier,
 /// timestamp, and floating-point value. DataPoints are grouped into series and
-/// compressed using the Gorilla algorithm.
+/// compressed using the Kuba algorithm.
 ///
 /// # Fields
 ///
@@ -353,7 +353,7 @@ impl TryFrom<String> for ChunkId {
 /// # Example
 ///
 /// ```rust
-/// use gorilla_tsdb::types::DataPoint;
+/// use kuba_tsdb::types::DataPoint;
 ///
 /// // CPU usage at 1-second interval
 /// let point1 = DataPoint::new(1, 1000, 45.2);  // 45.2% CPU
@@ -390,7 +390,7 @@ impl DataPoint {
     /// # Example
     ///
     /// ```rust
-    /// use gorilla_tsdb::types::DataPoint;
+    /// use kuba_tsdb::types::DataPoint;
     ///
     /// let point = DataPoint::new(
     ///     1,                  // series_id
@@ -415,7 +415,7 @@ impl DataPoint {
 /// # Example
 ///
 /// ```rust
-/// use gorilla_tsdb::types::TimeRange;
+/// use kuba_tsdb::types::TimeRange;
 ///
 /// // Query data from 1000ms to 2000ms (inclusive)
 /// let range = TimeRange::new(1000, 2000).unwrap();
@@ -456,7 +456,7 @@ impl TimeRange {
     /// # Example
     ///
     /// ```rust
-    /// use gorilla_tsdb::types::TimeRange;
+    /// use kuba_tsdb::types::TimeRange;
     ///
     /// // Valid range
     /// let range = TimeRange::new(1000, 2000).unwrap();
@@ -494,7 +494,7 @@ impl TimeRange {
     /// # Example
     ///
     /// ```rust
-    /// use gorilla_tsdb::types::TimeRange;
+    /// use kuba_tsdb::types::TimeRange;
     ///
     /// let range = TimeRange::new(1000, 2000).unwrap();
     /// assert!(range.contains(1000));  // Boundaries included
@@ -518,7 +518,7 @@ impl TimeRange {
     /// # Example
     ///
     /// ```rust
-    /// use gorilla_tsdb::types::TimeRange;
+    /// use kuba_tsdb::types::TimeRange;
     ///
     /// let range = TimeRange::new(1000, 2000).unwrap();
     /// assert_eq!(range.duration_ms(), Some(1000));
@@ -545,7 +545,7 @@ impl Default for TimeRange {
 /// # Example
 ///
 /// ```rust
-/// use gorilla_tsdb::types::TagSet;
+/// use kuba_tsdb::types::TagSet;
 ///
 /// let mut tags = TagSet::new();
 /// tags.add("host".to_string(), "web-01".to_string());
@@ -598,7 +598,7 @@ impl TagSet {
     /// # Example
     ///
     /// ```rust
-    /// use gorilla_tsdb::types::TagSet;
+    /// use kuba_tsdb::types::TagSet;
     ///
     /// let mut tags1 = TagSet::new();
     /// tags1.add("host".to_string(), "server1".to_string());
@@ -649,7 +649,7 @@ impl Default for TagSet {
 /// # Example
 ///
 /// ```rust
-/// use gorilla_tsdb::types::TagFilter;
+/// use kuba_tsdb::types::TagFilter;
 /// use std::collections::HashMap;
 ///
 /// let mut tags = HashMap::new();

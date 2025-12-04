@@ -9,8 +9,8 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use gorilla_tsdb::redis::{RedisConfig, RedisTimeIndex, SeriesManager};
-//! use gorilla_tsdb::engine::traits::SeriesMetadata;
+//! use kuba_tsdb::redis::{RedisConfig, RedisTimeIndex, SeriesManager};
+//! use kuba_tsdb::engine::traits::SeriesMetadata;
 //! use std::collections::HashMap;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {

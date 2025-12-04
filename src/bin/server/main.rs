@@ -1,6 +1,6 @@
-//! Gorilla TSDB HTTP Server
+//! Kuba TSDB HTTP Server
 //!
-//! This binary provides a complete HTTP server for the Gorilla time-series database.
+//! This binary provides a complete HTTP server for the Kuba time-series database.
 //! It exposes REST endpoints for data ingestion, querying, and administration.
 //!
 //! # Endpoints
@@ -45,16 +45,16 @@ use axum::{
 };
 use chrono::Utc;
 use config::{load_config_with_app, ServerConfig};
-use gorilla_tsdb::{
+use handlers::AppState;
+use kuba_tsdb::{
     cache::{setup_cache_invalidation, InvalidationPublisher, QueryCache, QueryCacheConfig},
-    compression::gorilla::GorillaCompressor,
+    compression::kuba::KubaCompressor,
     config::ApplicationConfig,
     engine::{DatabaseConfig, TimeSeriesDBBuilder},
     query::subscription::{SubscriptionConfig, SubscriptionManager},
     redis::{RedisConfig as RedisPoolConfig, RedisTimeIndex},
     storage::LocalDiskEngine,
 };
-use handlers::AppState;
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::signal;
 use tower_http::cors::{Any, CorsLayer};
@@ -159,8 +159,7 @@ async fn shutdown_signal() {
 async fn init_database(
     config: &ServerConfig,
     app_config: &ApplicationConfig,
-) -> Result<(gorilla_tsdb::engine::TimeSeriesDB, Arc<LocalDiskEngine>), Box<dyn std::error::Error>>
-{
+) -> Result<(kuba_tsdb::engine::TimeSeriesDB, Arc<LocalDiskEngine>), Box<dyn std::error::Error>> {
     std::fs::create_dir_all(&config.data_dir)?;
 
     let storage = Arc::new(LocalDiskEngine::new(config.data_dir.clone())?);
@@ -179,7 +178,7 @@ async fn init_database(
         );
     }
 
-    let compressor = GorillaCompressor::new();
+    let compressor = KubaCompressor::new();
 
     let redis_url = if app_config.redis.enabled {
         Some(app_config.redis.url.clone())
@@ -195,12 +194,12 @@ async fn init_database(
         custom_options: HashMap::new(),
     };
 
-    let storage_dyn: Arc<dyn gorilla_tsdb::engine::traits::StorageEngine + Send + Sync> =
+    let storage_dyn: Arc<dyn kuba_tsdb::engine::traits::StorageEngine + Send + Sync> =
         storage.clone();
 
     let db = if app_config.redis.enabled {
         // SEC-004: Use sanitized URL in logs to prevent credential leakage
-        let sanitized_url = gorilla_tsdb::redis::util::sanitize_url(&app_config.redis.url);
+        let sanitized_url = kuba_tsdb::redis::util::sanitize_url(&app_config.redis.url);
         debug!("Connecting to Redis at {}...", sanitized_url);
 
         // Build RedisConfig using the builder pattern
@@ -217,8 +216,8 @@ async fn init_database(
 
         // Re-register series metadata using the register_series trait method
         for (series_id, metadata) in &series_metadata {
-            use gorilla_tsdb::engine::traits::TimeIndex;
-            let index_metadata = gorilla_tsdb::engine::traits::SeriesMetadata {
+            use kuba_tsdb::engine::traits::TimeIndex;
+            let index_metadata = kuba_tsdb::engine::traits::SeriesMetadata {
                 metric_name: metadata.metric_name.clone(),
                 tags: metadata.tags.clone(),
                 created_at: Utc::now().timestamp_millis(),
@@ -242,11 +241,11 @@ async fn init_database(
     } else {
         debug!("Redis disabled, using in-memory index");
 
-        let in_memory_index = gorilla_tsdb::engine::InMemoryTimeIndex::new();
+        let in_memory_index = kuba_tsdb::engine::InMemoryTimeIndex::new();
         // Re-register series metadata using the register_series trait method
         for (series_id, metadata) in &series_metadata {
-            use gorilla_tsdb::engine::traits::TimeIndex;
-            let index_metadata = gorilla_tsdb::engine::traits::SeriesMetadata {
+            use kuba_tsdb::engine::traits::TimeIndex;
+            let index_metadata = kuba_tsdb::engine::traits::SeriesMetadata {
                 metric_name: metadata.metric_name.clone(),
                 tags: metadata.tags.clone(),
                 created_at: Utc::now().timestamp_millis(),
@@ -292,10 +291,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_line_number(false)
         .init();
 
-    info!(
-        "Starting Gorilla TSDB Server v{}",
-        env!("CARGO_PKG_VERSION")
-    );
+    info!("Starting Kuba TSDB Server v{}", env!("CARGO_PKG_VERSION"));
     debug!(
         "Configuration: listen_addr={}, data_dir={:?}",
         config.listen_addr, config.data_dir

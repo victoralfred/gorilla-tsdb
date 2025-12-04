@@ -1,4 +1,4 @@
-//! Metrics and telemetry for Gorilla TSDB
+//! Metrics and telemetry for Kuba TSDB
 //!
 //! This module provides Prometheus metrics for monitoring system performance,
 //! resource usage, errors, and data integrity.

@@ -18,7 +18,7 @@
 //! # Example
 //!
 //! ```rust
-//! use gorilla_tsdb::ingestion::routing::{RoutingStrategy, ConsistentHashRouter};
+//! use kuba_tsdb::ingestion::routing::{RoutingStrategy, ConsistentHashRouter};
 //!
 //! let router = ConsistentHashRouter::new(4, 100); // 4 shards, 100 virtual nodes each
 //! let shard = router.route("cpu,host=server01");

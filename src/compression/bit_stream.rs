@@ -1,7 +1,7 @@
-//! Bit-level I/O primitives for Gorilla compression
+//! Bit-level I/O primitives for Kuba compression
 //!
 //! This module provides low-level bit manipulation utilities for reading and writing
-//! individual bits and bit sequences. These are essential for the Gorilla compression
+//! individual bits and bit sequences. These are essential for the Kuba compression
 //! algorithm which requires precise bit-level control.
 //!
 //! # Overview
@@ -14,7 +14,7 @@
 //!
 //! # Example
 //! ```
-//! use gorilla_tsdb::compression::bit_stream::{BitWriter, BitReader};
+//! use kuba_tsdb::compression::bit_stream::{BitWriter, BitReader};
 //!
 //! // Write some bits
 //! let mut writer = BitWriter::new();
@@ -33,7 +33,7 @@ use crate::error::CompressionError;
 /// Writer for bit-level operations
 ///
 /// `BitWriter` accumulates bits into bytes and maintains precise bit-level positioning.
-/// Bits are written MSB-first within each byte, matching the Gorilla paper specification.
+/// Bits are written MSB-first within each byte, matching the Kuba paper specification.
 ///
 /// # Internal State
 ///
@@ -43,7 +43,7 @@ use crate::error::CompressionError;
 ///
 /// # Example
 /// ```
-/// use gorilla_tsdb::compression::bit_stream::BitWriter;
+/// use kuba_tsdb::compression::bit_stream::BitWriter;
 ///
 /// let mut writer = BitWriter::new();
 /// writer.write_bit(true);   // Writes 1 to bit position 0
@@ -84,7 +84,7 @@ impl BitWriter {
     ///
     /// # Example
     /// ```
-    /// use gorilla_tsdb::compression::bit_stream::BitWriter;
+    /// use kuba_tsdb::compression::bit_stream::BitWriter;
     ///
     /// let mut writer = BitWriter::new();
     /// writer.write_bit(true);   // Writes bit 1
@@ -127,7 +127,7 @@ impl BitWriter {
     ///
     /// # Example
     /// ```
-    /// use gorilla_tsdb::compression::bit_stream::BitWriter;
+    /// use kuba_tsdb::compression::bit_stream::BitWriter;
     ///
     /// let mut writer = BitWriter::new();
     /// writer.write_bits(0b1010, 4);  // Writes bits: 1, 0, 1, 0
@@ -161,7 +161,7 @@ impl BitWriter {
     ///
     /// # Example
     /// ```
-    /// use gorilla_tsdb::compression::bit_stream::BitWriter;
+    /// use kuba_tsdb::compression::bit_stream::BitWriter;
     ///
     /// let mut writer = BitWriter::new();
     /// writer.write_bits(0b1010, 4);  // Only 4 bits written
@@ -226,7 +226,7 @@ impl Default for BitWriter {
 ///
 /// # Example
 /// ```
-/// use gorilla_tsdb::compression::bit_stream::BitReader;
+/// use kuba_tsdb::compression::bit_stream::BitReader;
 ///
 /// let data = vec![0b10101100];
 /// let mut reader = BitReader::new(&data);
@@ -252,7 +252,7 @@ impl<'a> BitReader<'a> {
     ///
     /// # Example
     /// ```
-    /// use gorilla_tsdb::compression::bit_stream::BitReader;
+    /// use kuba_tsdb::compression::bit_stream::BitReader;
     ///
     /// let data = vec![0xFF, 0x00];
     /// let reader = BitReader::new(&data);
@@ -280,7 +280,7 @@ impl<'a> BitReader<'a> {
     ///
     /// # Example
     /// ```
-    /// use gorilla_tsdb::compression::bit_stream::BitReader;
+    /// use kuba_tsdb::compression::bit_stream::BitReader;
     ///
     /// let data = vec![0b10101010];
     /// let mut reader = BitReader::new(&data);
@@ -337,7 +337,7 @@ impl<'a> BitReader<'a> {
     ///
     /// # Example
     /// ```
-    /// use gorilla_tsdb::compression::bit_stream::BitReader;
+    /// use kuba_tsdb::compression::bit_stream::BitReader;
     ///
     /// let data = vec![0b10101100];
     /// let mut reader = BitReader::new(&data);
@@ -397,7 +397,7 @@ impl<'a> BitReader<'a> {
     ///
     /// # Example
     /// ```
-    /// use gorilla_tsdb::compression::bit_stream::BitReader;
+    /// use kuba_tsdb::compression::bit_stream::BitReader;
     ///
     /// let mut reader = BitReader::new(&[0xFF]);
     /// reader.read_bits(5).unwrap();
