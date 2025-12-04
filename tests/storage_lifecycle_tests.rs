@@ -9,16 +9,14 @@
 //! - Concurrent reads and writes
 //! - Crash recovery simulation
 
-use gorilla_tsdb::engine::traits::StorageEngine;
-use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
-use gorilla_tsdb::storage::chunk::{
-    Chunk, ChunkHeader, CompressionType, CHUNK_MAGIC, CHUNK_VERSION,
-};
-use gorilla_tsdb::storage::local_disk::LocalDiskEngine;
-use gorilla_tsdb::storage::mmap::MmapChunk;
-use gorilla_tsdb::storage::reader::{ChunkReader, QueryOptions};
-use gorilla_tsdb::storage::writer::{ChunkWriter, ChunkWriterConfig};
-use gorilla_tsdb::types::DataPoint;
+use kuba_tsdb::engine::traits::StorageEngine;
+use kuba_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
+use kuba_tsdb::storage::chunk::{Chunk, ChunkHeader, CompressionType, CHUNK_MAGIC, CHUNK_VERSION};
+use kuba_tsdb::storage::local_disk::LocalDiskEngine;
+use kuba_tsdb::storage::mmap::MmapChunk;
+use kuba_tsdb::storage::reader::{ChunkReader, QueryOptions};
+use kuba_tsdb::storage::writer::{ChunkWriter, ChunkWriterConfig};
+use kuba_tsdb::types::DataPoint;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -33,7 +31,7 @@ use tokio::fs;
 #[tokio::test]
 async fn test_chunk_full_lifecycle() {
     let temp_dir = TempDir::new().unwrap();
-    let chunk_path = temp_dir.path().join("lifecycle_test.gor");
+    let chunk_path = temp_dir.path().join("lifecycle_test.kub");
 
     // Step 1: Create active chunk
     let mut chunk = Chunk::new_active(1, 10000);
@@ -106,7 +104,7 @@ async fn test_chunk_lifecycle_with_various_data_patterns() {
     let temp_dir = TempDir::new().unwrap();
 
     // Test pattern 1: Constant values (high compression ratio)
-    let chunk_path = temp_dir.path().join("constant_values.gor");
+    let chunk_path = temp_dir.path().join("constant_values.kub");
     let mut chunk = Chunk::new_active(1, 1000);
 
     for i in 0..500 {
@@ -125,7 +123,7 @@ async fn test_chunk_lifecycle_with_various_data_patterns() {
     assert!(points.iter().all(|p| p.value == 42.0));
 
     // Test pattern 2: Sequential increasing values
-    let chunk_path = temp_dir.path().join("sequential_values.gor");
+    let chunk_path = temp_dir.path().join("sequential_values.kub");
     let mut chunk = Chunk::new_active(2, 1000);
 
     for i in 0..500 {
@@ -147,7 +145,7 @@ async fn test_chunk_lifecycle_with_various_data_patterns() {
     }
 
     // Test pattern 3: Alternating values
-    let chunk_path = temp_dir.path().join("alternating_values.gor");
+    let chunk_path = temp_dir.path().join("alternating_values.kub");
     let mut chunk = Chunk::new_active(3, 1000);
 
     for i in 0..500 {
@@ -174,7 +172,7 @@ async fn test_chunk_lifecycle_with_various_data_patterns() {
 #[tokio::test]
 async fn test_chunk_lifecycle_edge_values() {
     let temp_dir = TempDir::new().unwrap();
-    let chunk_path = temp_dir.path().join("edge_values.gor");
+    let chunk_path = temp_dir.path().join("edge_values.kub");
 
     let mut chunk = Chunk::new_active(1, 100);
 
@@ -234,7 +232,7 @@ async fn test_file_io_header_serialization() {
     header.compressed_size = 512;
     header.uncompressed_size = 2048;
     header.checksum = 0xDEADBEEF12345678;
-    header.compression_type = CompressionType::Gorilla;
+    header.compression_type = CompressionType::Kuba;
 
     let header_bytes = header.to_bytes();
     assert_eq!(header_bytes.len(), 64, "Header should be exactly 64 bytes");
@@ -264,7 +262,7 @@ async fn test_file_io_corruption_detection() {
     let temp_dir = TempDir::new().unwrap();
 
     // Create a valid chunk first
-    let chunk_path = temp_dir.path().join("corrupt_test.gor");
+    let chunk_path = temp_dir.path().join("corrupt_test.kub");
     let mut chunk = Chunk::new_active(1, 100);
 
     for i in 0..50 {
@@ -287,7 +285,7 @@ async fn test_file_io_corruption_detection() {
     file_contents[51] = 0xFF;
 
     // Write corrupted file
-    let corrupted_path = temp_dir.path().join("corrupted.gor");
+    let corrupted_path = temp_dir.path().join("corrupted.kub");
     fs::write(&corrupted_path, &file_contents).await.unwrap();
 
     // Attempting to read should detect corruption via checksum
@@ -317,7 +315,7 @@ async fn test_file_io_truncated_file_detection() {
     let temp_dir = TempDir::new().unwrap();
 
     // Create header-only file (too small)
-    let truncated_path = temp_dir.path().join("truncated.gor");
+    let truncated_path = temp_dir.path().join("truncated.kub");
 
     let mut header = ChunkHeader::new(1);
     header.point_count = 100; // Claims to have points
@@ -349,7 +347,7 @@ async fn test_local_disk_engine_basic() {
     let series_path = temp_dir.path().join(format!("series_{}", series_id));
     std::fs::create_dir_all(&series_path).unwrap();
 
-    let chunk_path = series_path.join("chunk_test.gor");
+    let chunk_path = series_path.join("chunk_test.kub");
 
     let mut chunk = Chunk::new_active(series_id, 1000);
     for i in 0..500 {
@@ -385,7 +383,7 @@ async fn test_local_disk_engine_basic() {
 #[tokio::test]
 async fn test_mmap_zero_copy_reads() {
     let temp_dir = TempDir::new().unwrap();
-    let chunk_path = temp_dir.path().join("mmap_test.gor");
+    let chunk_path = temp_dir.path().join("mmap_test.kub");
 
     // Create and seal a chunk
     let mut chunk = Chunk::new_active(1, 1000);
@@ -424,7 +422,7 @@ async fn test_mmap_zero_copy_reads() {
 #[tokio::test]
 async fn test_mmap_large_chunk() {
     let temp_dir = TempDir::new().unwrap();
-    let chunk_path = temp_dir.path().join("large_mmap_test.gor");
+    let chunk_path = temp_dir.path().join("large_mmap_test.kub");
 
     // Create a larger chunk
     let mut chunk = Chunk::new_active(1, 100_000);
@@ -523,7 +521,7 @@ async fn test_concurrent_writes_active_chunk() {
 #[tokio::test]
 async fn test_concurrent_reads_sealed_chunk() {
     let temp_dir = TempDir::new().unwrap();
-    let chunk_path = temp_dir.path().join("concurrent_read_test.gor");
+    let chunk_path = temp_dir.path().join("concurrent_read_test.kub");
 
     // Create and seal a chunk
     let mut chunk = Chunk::new_active(1, 1000);
@@ -567,7 +565,7 @@ async fn test_concurrent_reads_sealed_chunk() {
 #[tokio::test]
 async fn test_concurrent_mmap_access() {
     let temp_dir = TempDir::new().unwrap();
-    let chunk_path = temp_dir.path().join("concurrent_mmap_test.gor");
+    let chunk_path = temp_dir.path().join("concurrent_mmap_test.kub");
 
     // Create and seal
     let mut chunk = Chunk::new_active(1, 1000);
@@ -614,7 +612,7 @@ async fn test_concurrent_mmap_access() {
 #[tokio::test]
 async fn test_recovery_incomplete_write() {
     let temp_dir = TempDir::new().unwrap();
-    let chunk_path = temp_dir.path().join("incomplete.gor");
+    let chunk_path = temp_dir.path().join("incomplete.kub");
 
     // Simulate an incomplete write by writing only partial data
     let mut header = ChunkHeader::new(1);
@@ -640,7 +638,7 @@ async fn test_recovery_incomplete_write() {
 #[tokio::test]
 async fn test_recovery_corrupted_magic() {
     let temp_dir = TempDir::new().unwrap();
-    let chunk_path = temp_dir.path().join("bad_magic.gor");
+    let chunk_path = temp_dir.path().join("bad_magic.kub");
 
     // Create valid chunk then corrupt magic
     let mut chunk = Chunk::new_active(1, 100);
@@ -691,7 +689,7 @@ async fn test_recovery_parallel_file_operations() {
         let dir = temp_dir.path().to_path_buf();
 
         let handle = tokio::spawn(async move {
-            let chunk_path = dir.join(format!("parallel_{}.gor", chunk_id));
+            let chunk_path = dir.join(format!("parallel_{}.kub", chunk_id));
 
             let mut chunk = Chunk::new_active(chunk_id as u128, 100);
 
@@ -732,7 +730,7 @@ async fn test_recovery_parallel_file_operations() {
 #[tokio::test]
 async fn test_chunk_reader_query_options() {
     let temp_dir = TempDir::new().unwrap();
-    let chunk_path = temp_dir.path().join("reader_test.gor");
+    let chunk_path = temp_dir.path().join("reader_test.kub");
 
     // Create chunk with known data
     let mut chunk = Chunk::new_active(1, 1000);
@@ -804,7 +802,7 @@ async fn test_chunk_reader_parallel() {
     for chunk_id in 0..5 {
         let chunk_path = temp_dir
             .path()
-            .join(format!("parallel_read_{}.gor", chunk_id));
+            .join(format!("parallel_read_{}.kub", chunk_id));
 
         let mut chunk = Chunk::new_active(1, 100);
 
@@ -948,9 +946,9 @@ fn test_chunk_header_boundary_values() {
 fn test_chunk_header_compression_types() {
     for compression in [
         CompressionType::None,
-        CompressionType::Gorilla,
+        CompressionType::Kuba,
         CompressionType::Snappy,
-        CompressionType::GorillaSnappy,
+        CompressionType::KubaSnappy,
     ] {
         let mut header = ChunkHeader::new(1);
         header.point_count = 1; // Must be non-zero for validation

@@ -3,7 +3,7 @@ global:
   evaluation_interval: 15s
   external_labels:
     environment: 'staging'
-    cluster: 'gorilla-tsdb'
+    cluster: 'Kuba-tsdb'
 
 # Alertmanager configuration (optional)
 # alerting:
@@ -16,8 +16,8 @@ rule_files:
   # - "alerts/*.yml"
 
 scrape_configs:
-  # Gorilla TSDB metrics
-  - job_name: 'gorilla-tsdb'
+  # Kuba TSDB metrics
+  - job_name: 'Kuba-tsdb'
     static_configs:
       - targets: ['tsdb:8080']
         labels:

@@ -9,7 +9,7 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use gorilla_tsdb::redis::{RedisConfig, RedisPool};
+//! use kuba_tsdb::redis::{RedisConfig, RedisPool};
 //! use std::time::Duration;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -133,7 +133,7 @@ impl RedisConfig {
     /// # Example
     ///
     /// ```rust
-    /// use gorilla_tsdb::redis::RedisConfig;
+    /// use kuba_tsdb::redis::RedisConfig;
     ///
     /// // Enable TLS for a Redis connection
     /// let config = RedisConfig::with_url("rediss://secure.redis.example.com:6380")
@@ -406,7 +406,7 @@ impl RedisPool {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use gorilla_tsdb::redis::{RedisConfig, RedisPool};
+    /// use kuba_tsdb::redis::{RedisConfig, RedisPool};
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let pool = RedisPool::new(RedisConfig::default()).await?;

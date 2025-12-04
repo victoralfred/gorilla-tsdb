@@ -10,10 +10,10 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use gorilla_tsdb::query::operators::StorageScanOperator;
-//! use gorilla_tsdb::query::SeriesSelector;
-//! use gorilla_tsdb::storage::LocalDiskEngine;
-//! use gorilla_tsdb::types::TimeRange;
+//! use kuba_tsdb::query::operators::StorageScanOperator;
+//! use kuba_tsdb::query::SeriesSelector;
+//! use kuba_tsdb::storage::LocalDiskEngine;
+//! use kuba_tsdb::types::TimeRange;
 //! use std::sync::Arc;
 //!
 //! // Create storage engine (requires actual directory)
@@ -422,13 +422,13 @@ mod tests {
         ChunkMetadata {
             chunk_id: crate::types::ChunkId::new(),
             series_id,
-            path: PathBuf::from("/tmp/chunk.gor"),
+            path: PathBuf::from("/tmp/chunk.kub"),
             start_timestamp: start,
             end_timestamp: end,
             point_count: points,
             size_bytes: 1024,
             uncompressed_size: 0,
-            compression: crate::storage::chunk::CompressionType::Gorilla,
+            compression: crate::storage::chunk::CompressionType::Kuba,
             created_at: 0,
             last_accessed: 0,
         }

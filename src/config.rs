@@ -1,11 +1,11 @@
-//! Configuration management for Gorilla TSDB
+//! Configuration management for Kuba TSDB
 //!
 //! This module provides configuration file support with TOML format,
 //! environment variable overrides, and sensible defaults.
 //!
 //! # Configuration Priority (Highest to Lowest)
 //!
-//! 1. Environment Variables (GORILLA_*)
+//! 1. Environment Variables (Kuba_*)
 //! 2. Command-line Arguments
 //! 3. Configuration File (application.toml)
 //! 4. Built-in Defaults
@@ -13,7 +13,7 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use gorilla_tsdb::config::ApplicationConfig;
+//! use kuba_tsdb::config::ApplicationConfig;
 //!
 //! // Load from file with environment overrides
 //! let config = ApplicationConfig::load("application.toml").unwrap();
@@ -65,7 +65,7 @@ pub type ConfigResult<T> = Result<T, ConfigError>;
 
 /// Root application configuration
 ///
-/// Contains all configuration sections for the Gorilla TSDB server.
+/// Contains all configuration sections for the Kuba TSDB server.
 /// All fields have sensible defaults and can be overridden via TOML
 /// file or environment variables.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -148,51 +148,51 @@ impl ApplicationConfig {
 
     /// Apply environment variable overrides
     ///
-    /// Environment variables use the GORILLA_ prefix and underscore-separated
-    /// section names. For example: GORILLA_SERVER_LISTEN_ADDR
+    /// Environment variables use the Kuba_ prefix and underscore-separated
+    /// section names. For example: Kuba_SERVER_LISTEN_ADDR
     pub fn apply_env_overrides(&mut self) -> ConfigResult<()> {
         // Server overrides
-        if let Ok(val) = std::env::var("GORILLA_SERVER_LISTEN_ADDR") {
+        if let Ok(val) = std::env::var("Kuba_SERVER_LISTEN_ADDR") {
             self.server.listen_addr = val;
         }
-        if let Ok(val) = std::env::var("GORILLA_SERVER_WORKERS") {
-            self.server.workers = val.parse().map_err(|_| {
-                ConfigError::EnvVar("GORILLA_SERVER_WORKERS must be a number".into())
-            })?;
+        if let Ok(val) = std::env::var("Kuba_SERVER_WORKERS") {
+            self.server.workers = val
+                .parse()
+                .map_err(|_| ConfigError::EnvVar("Kuba_SERVER_WORKERS must be a number".into()))?;
         }
-        if let Ok(val) = std::env::var("GORILLA_SERVER_LOG_LEVEL") {
+        if let Ok(val) = std::env::var("Kuba_SERVER_LOG_LEVEL") {
             self.server.log_level = val;
         }
 
         // Storage overrides
-        if let Ok(val) = std::env::var("GORILLA_STORAGE_DATA_DIR") {
+        if let Ok(val) = std::env::var("Kuba_STORAGE_DATA_DIR") {
             self.storage.data_dir = PathBuf::from(val);
         }
 
         // Ingestion memory overrides
-        if let Ok(val) = std::env::var("GORILLA_INGESTION_MAX_MEMORY") {
+        if let Ok(val) = std::env::var("Kuba_INGESTION_MAX_MEMORY") {
             self.ingestion.max_total_memory_bytes = parse_size(&val).ok_or_else(|| {
                 ConfigError::EnvVar(
-                    "GORILLA_INGESTION_MAX_MEMORY must be a valid size (e.g., 512MB)".into(),
+                    "Kuba_INGESTION_MAX_MEMORY must be a valid size (e.g., 512MB)".into(),
                 )
             })?;
         }
 
         // Rate limit overrides
-        if let Ok(val) = std::env::var("GORILLA_RATE_LIMIT_ENABLED") {
+        if let Ok(val) = std::env::var("Kuba_RATE_LIMIT_ENABLED") {
             self.rate_limit.enabled = val.parse().unwrap_or(true);
         }
 
         // Redis overrides
-        if let Ok(val) = std::env::var("GORILLA_REDIS_URL") {
+        if let Ok(val) = std::env::var("Kuba_REDIS_URL") {
             self.redis.url = val;
             self.redis.enabled = true;
         }
 
         // Query timeout override
-        if let Ok(val) = std::env::var("GORILLA_QUERY_TIMEOUT_SECS") {
+        if let Ok(val) = std::env::var("Kuba_QUERY_TIMEOUT_SECS") {
             self.query.timeout_secs = val.parse().map_err(|_| {
-                ConfigError::EnvVar("GORILLA_QUERY_TIMEOUT_SECS must be a number".into())
+                ConfigError::EnvVar("Kuba_QUERY_TIMEOUT_SECS must be a number".into())
             })?;
         }
 
@@ -394,7 +394,7 @@ pub struct StorageConfig {
 impl Default for StorageConfig {
     fn default() -> Self {
         Self {
-            data_dir: PathBuf::from("/data/gorilla-tsdb"),
+            data_dir: PathBuf::from("/data/Kuba-tsdb"),
             max_chunk_size_bytes: 1024 * 1024,  // 1MB
             max_chunk_points: 10_000_000,       // 10M
             seal_duration_ms: 3_600_000,        // 1 hour
@@ -1525,11 +1525,11 @@ mod tests {
 
     #[test]
     fn test_env_override() {
-        std::env::set_var("GORILLA_SERVER_WORKERS", "16");
+        std::env::set_var("Kuba_SERVER_WORKERS", "16");
         let mut config = ApplicationConfig::default();
         config.apply_env_overrides().unwrap();
         assert_eq!(config.server.workers, 16);
-        std::env::remove_var("GORILLA_SERVER_WORKERS");
+        std::env::remove_var("Kuba_SERVER_WORKERS");
     }
 
     #[test]

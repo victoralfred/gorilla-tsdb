@@ -3,7 +3,7 @@
 //! The scan operator reads data from storage (chunks) and produces
 //! batches for downstream operators. It handles:
 //! - Chunk discovery and ordering
-//! - Decompression (Gorilla encoding)
+//! - Decompression (Kuba encoding)
 //! - Batch formation with configurable size
 //! - Zone map filtering for chunk pruning
 //!

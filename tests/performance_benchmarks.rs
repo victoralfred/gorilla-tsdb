@@ -9,13 +9,13 @@
 //!
 //! Run with: cargo test --release --test performance_benchmarks -- --ignored --nocapture
 
-use gorilla_tsdb::compression::gorilla::GorillaCompressor;
-use gorilla_tsdb::engine::traits::Compressor;
-use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
-use gorilla_tsdb::storage::chunk::Chunk;
-use gorilla_tsdb::storage::mmap::MmapChunk;
-use gorilla_tsdb::storage::reader::{ChunkReader, QueryOptions};
-use gorilla_tsdb::types::DataPoint;
+use kuba_tsdb::compression::kuba::KubaCompressor;
+use kuba_tsdb::engine::traits::Compressor;
+use kuba_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
+use kuba_tsdb::storage::chunk::Chunk;
+use kuba_tsdb::storage::mmap::MmapChunk;
+use kuba_tsdb::storage::reader::{ChunkReader, QueryOptions};
+use kuba_tsdb::types::DataPoint;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
@@ -198,7 +198,7 @@ async fn benchmark_sequential_read_throughput() {
     println!("\n=== Sequential Read Throughput Benchmark ===\n");
 
     let temp_dir = TempDir::new().unwrap();
-    let chunk_path = temp_dir.path().join("read_bench.gor");
+    let chunk_path = temp_dir.path().join("read_bench.kub");
 
     // Create test data
     let point_counts = [1000, 10000, 100000];
@@ -253,7 +253,7 @@ async fn benchmark_mmap_read_performance() {
     println!("\n=== Memory-Mapped Read Performance ===\n");
 
     let temp_dir = TempDir::new().unwrap();
-    let chunk_path = temp_dir.path().join("mmap_bench.gor");
+    let chunk_path = temp_dir.path().join("mmap_bench.kub");
 
     // Create large test chunk
     let mut chunk = Chunk::new_active(1, 100_001);
@@ -330,7 +330,7 @@ async fn benchmark_parallel_read_scaling() {
     // Create 10 chunks
     let mut paths = vec![];
     for i in 0..10 {
-        let chunk_path = temp_dir.path().join(format!("parallel_{}.gor", i));
+        let chunk_path = temp_dir.path().join(format!("parallel_{}.kub", i));
 
         let mut chunk = Chunk::new_active(1, 10001);
         for j in 0..10000 {
@@ -385,7 +385,7 @@ async fn benchmark_parallel_read_scaling() {
 async fn benchmark_compression_throughput() {
     println!("\n=== Compression Throughput Benchmark ===\n");
 
-    let compressor = GorillaCompressor::new();
+    let compressor = KubaCompressor::new();
     let point_counts = [100, 1000, 10000, 100000];
 
     for point_count in point_counts {
@@ -457,7 +457,7 @@ async fn benchmark_compression_throughput() {
 async fn benchmark_compression_patterns() {
     println!("\n=== Compression Pattern Analysis ===\n");
 
-    let compressor = GorillaCompressor::new();
+    let compressor = KubaCompressor::new();
     let point_count = 10000;
 
     let patterns: Vec<(&str, Vec<DataPoint>)> = vec![
@@ -532,7 +532,7 @@ async fn benchmark_compression_patterns() {
         );
     }
 
-    println!("\nNote: Gorilla compression works best with slowly-changing values");
+    println!("\nNote: Kuba compression works best with slowly-changing values");
 }
 
 // =============================================================================
@@ -555,7 +555,7 @@ async fn benchmark_seal_latency() {
         for iter in 0..iterations {
             let chunk_path = temp_dir
                 .path()
-                .join(format!("seal_bench_{}_{}.gor", point_count, iter));
+                .join(format!("seal_bench_{}_{}.kub", point_count, iter));
 
             let mut chunk = Chunk::new_active(1, point_count + 100);
 
@@ -684,7 +684,7 @@ async fn benchmark_summary_report() {
     let write_throughput = 1_000_000.0 / write_elapsed.as_secs_f64();
 
     // Seal performance
-    let chunk_path = temp_dir.path().join("summary_test.gor");
+    let chunk_path = temp_dir.path().join("summary_test.kub");
     let mut chunk = Chunk::new_active(1, 100_001);
     for i in 0..100_000 {
         chunk
@@ -708,7 +708,7 @@ async fn benchmark_summary_report() {
     let read_throughput = 100_000.0 / read_elapsed.as_secs_f64();
 
     // Compression stats
-    let compressor = GorillaCompressor::new();
+    let compressor = KubaCompressor::new();
     let points: Vec<DataPoint> = (0..10000)
         .map(|i| DataPoint {
             series_id: 1,

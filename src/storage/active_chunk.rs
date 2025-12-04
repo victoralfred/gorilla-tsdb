@@ -27,8 +27,8 @@ pub use crate::storage::chunk::SealConfig;
 /// # Example
 ///
 /// ```
-/// use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
-/// use gorilla_tsdb::types::DataPoint;
+/// use kuba_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
+/// use kuba_tsdb::types::DataPoint;
 /// use std::sync::Arc;
 /// use std::thread;
 ///
@@ -93,7 +93,7 @@ impl ActiveChunk {
     /// # Example
     ///
     /// ```
-    /// use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
+    /// use kuba_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
     ///
     /// let config = SealConfig {
     ///     max_points: 10_000,
@@ -142,8 +142,8 @@ impl ActiveChunk {
     /// # Example
     ///
     /// ```
-    /// use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
-    /// use gorilla_tsdb::types::DataPoint;
+    /// use kuba_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
+    /// use kuba_tsdb::types::DataPoint;
     ///
     /// let chunk = ActiveChunk::new(1, 100, SealConfig::default());
     ///
@@ -286,8 +286,8 @@ impl ActiveChunk {
     /// # Example
     ///
     /// ```
-    /// use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
-    /// use gorilla_tsdb::types::DataPoint;
+    /// use kuba_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
+    /// use kuba_tsdb::types::DataPoint;
     ///
     /// let config = SealConfig {
     ///     max_points: 5,
@@ -362,15 +362,15 @@ impl ActiveChunk {
     /// # Example
     ///
     /// ```no_run
-    /// use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
-    /// use gorilla_tsdb::types::DataPoint;
+    /// use kuba_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
+    /// use kuba_tsdb::types::DataPoint;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let chunk = ActiveChunk::new(1, 100, SealConfig::default());
     ///
     /// chunk.append(DataPoint { series_id: 1, timestamp: 1000, value: 42.0 })?;
     ///
-    /// let sealed_chunk = chunk.seal("/tmp/chunk.gor".into()).await?;
+    /// let sealed_chunk = chunk.seal("/tmp/chunk.kub".into()).await?;
     /// assert!(sealed_chunk.is_sealed());
     /// # Ok(())
     /// # }
@@ -458,8 +458,8 @@ impl ActiveChunk {
     /// # Example
     ///
     /// ```
-    /// use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
-    /// use gorilla_tsdb::types::DataPoint;
+    /// use kuba_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
+    /// use kuba_tsdb::types::DataPoint;
     ///
     /// let chunk = ActiveChunk::new(1, 1000, SealConfig::default());
     ///
@@ -562,8 +562,8 @@ impl ActiveChunk {
     /// # Example
     ///
     /// ```
-    /// use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
-    /// use gorilla_tsdb::types::DataPoint;
+    /// use kuba_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
+    /// use kuba_tsdb::types::DataPoint;
     ///
     /// let chunk = ActiveChunk::new(1, 100, SealConfig::default());
     /// assert_eq!(chunk.point_count(), 0);
@@ -585,8 +585,8 @@ impl ActiveChunk {
     /// # Example
     ///
     /// ```
-    /// use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
-    /// use gorilla_tsdb::types::DataPoint;
+    /// use kuba_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
+    /// use kuba_tsdb::types::DataPoint;
     ///
     /// let chunk = ActiveChunk::new(1, 100, SealConfig::default());
     ///
@@ -630,7 +630,7 @@ impl ActiveChunk {
     /// # Example
     ///
     /// ```
-    /// use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
+    /// use kuba_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
     /// use std::time::Duration;
     ///
     /// let chunk = ActiveChunk::new(42, 1000, SealConfig::default());
@@ -652,7 +652,7 @@ impl ActiveChunk {
     /// # Example
     ///
     /// ```
-    /// use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
+    /// use kuba_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
     ///
     /// let chunk = ActiveChunk::new(42, 100, SealConfig::default());
     /// assert_eq!(chunk.utilization(), 0.0);
@@ -764,7 +764,7 @@ mod tests {
             })
             .unwrap();
 
-        let result = chunk.seal("/tmp/test_active_chunk_seal.gor".into()).await;
+        let result = chunk.seal("/tmp/test_active_chunk_seal.kub".into()).await;
 
         assert!(result.is_ok());
         assert!(chunk.is_sealed());
@@ -774,7 +774,7 @@ mod tests {
     async fn test_seal_empty() {
         let chunk = ActiveChunk::new(1, 100, SealConfig::default());
 
-        let result = chunk.seal("/tmp/test.gor".into()).await;
+        let result = chunk.seal("/tmp/test.kub".into()).await;
 
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("empty"));
@@ -791,7 +791,7 @@ mod tests {
                 value: 42.0,
             })
             .unwrap();
-        chunk.seal("/tmp/test.gor".into()).await.unwrap();
+        chunk.seal("/tmp/test.kub".into()).await.unwrap();
 
         let result = chunk.append(DataPoint {
             series_id: 1,

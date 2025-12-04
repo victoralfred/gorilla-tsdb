@@ -3,7 +3,7 @@
 //! These tests reproduce specific edge cases and bugs discovered during development
 //! to ensure they remain fixed.
 
-use gorilla_tsdb::storage::{DirectoryMaintenance, SeriesMetadata, WriteLock};
+use kuba_tsdb::storage::{DirectoryMaintenance, SeriesMetadata, WriteLock};
 use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::fs;
@@ -64,7 +64,7 @@ async fn bug_save_to_deleted_directory() {
 #[tokio::test]
 async fn bug_cleanup_during_write() {
     let temp_dir = TempDir::new().unwrap();
-    let chunk_path = temp_dir.path().join("active.gor");
+    let chunk_path = temp_dir.path().join("active.kub");
 
     // Start writing to file
     let write_handle = {
@@ -129,8 +129,8 @@ async fn bug_orphaned_lock_file() {
 async fn bug_circular_symlink() {
     let temp_dir = TempDir::new().unwrap();
 
-    let link1 = temp_dir.path().join("link1.gor");
-    let link2 = temp_dir.path().join("link2.gor");
+    let link1 = temp_dir.path().join("link1.kub");
+    let link2 = temp_dir.path().join("link2.kub");
 
     // Create circular symlinks
     tokio::fs::symlink(&link2, &link1).await.unwrap();
@@ -165,7 +165,7 @@ async fn bug_invalid_timestamps() {
         "name": null,
         "retention_days": 0,
         "max_points_per_chunk": 10000,
-        "compression": "gorilla",
+        "compression": "Kuba",
         "created_at": -1,
         "modified_at": -1,
         "total_points": 0,
@@ -203,12 +203,12 @@ async fn bug_cleanup_with_hidden_files() {
         .await
         .unwrap();
 
-    // The .hidden file should prevent removal (it's not a .gor file)
+    // The .hidden file should prevent removal (it's not a .kub file)
     // But .write.lock and metadata.json should be ignored
     // Check if directory still exists
     let _exists = series_dir.exists();
 
-    // Current implementation only checks for .gor files
+    // Current implementation only checks for .kub files
     // So directory might be removed - this is acceptable
     assert!(removed <= 1, "Should handle hidden files gracefully");
 }
@@ -286,7 +286,7 @@ async fn bug_concurrent_modification_during_save() {
 async fn bug_retention_timestamp_overflow() {
     let temp_dir = TempDir::new().unwrap();
 
-    fs::write(temp_dir.path().join("old.gor"), b"data")
+    fs::write(temp_dir.path().join("old.kub"), b"data")
         .await
         .unwrap();
 
@@ -315,7 +315,7 @@ async fn bug_validation_small_chunks() {
         .unwrap();
 
     // Create valid but small chunk file (less than 64 bytes)
-    fs::write(temp_dir.path().join("small.gor"), b"small")
+    fs::write(temp_dir.path().join("small.kub"), b"small")
         .await
         .unwrap();
 
@@ -361,7 +361,7 @@ async fn bug_metadata_extra_fields() {
         "name": "test",
         "retention_days": 30,
         "max_points_per_chunk": 10000,
-        "compression": "gorilla",
+        "compression": "Kuba",
         "created_at": 1000000,
         "modified_at": 1000000,
         "total_points": 500,

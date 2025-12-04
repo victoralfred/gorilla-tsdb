@@ -3,9 +3,9 @@
 //! This test suite catches outliers, silent errors, and hidden security/performance issues
 //! identified in the comprehensive security and performance review.
 
-use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
-use gorilla_tsdb::storage::chunk::Chunk;
-use gorilla_tsdb::types::DataPoint;
+use kuba_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
+use kuba_tsdb::storage::chunk::Chunk;
+use kuba_tsdb::types::DataPoint;
 use std::sync::Arc;
 use std::thread;
 
@@ -194,11 +194,11 @@ fn test_critical_unbounded_growth() {
 /// File: src/storage/mmap.rs:292-306
 #[tokio::test]
 async fn test_critical_checksum_on_correct_data() {
-    use gorilla_tsdb::storage::mmap::MmapChunk;
+    use kuba_tsdb::storage::mmap::MmapChunk;
     use tempfile::TempDir;
 
     let temp_dir = TempDir::new().unwrap();
-    let path = temp_dir.path().join("test_chunk.gor");
+    let path = temp_dir.path().join("test_chunk.kub");
 
     // Create and seal a chunk
     let mut chunk = Chunk::new_active(1, 100);
@@ -232,7 +232,7 @@ async fn test_critical_toctou_seal_path() {
     use tempfile::TempDir;
 
     let temp_dir = TempDir::new().unwrap();
-    let path = temp_dir.path().join("series_1").join("chunk.gor");
+    let path = temp_dir.path().join("series_1").join("chunk.kub");
 
     let mut chunk = Chunk::new_active(1, 100);
     chunk
@@ -263,7 +263,7 @@ async fn test_critical_fsync_on_seal() {
     use tokio::fs;
 
     let temp_dir = TempDir::new().unwrap();
-    let path = temp_dir.path().join("chunk.gor");
+    let path = temp_dir.path().join("chunk.kub");
 
     let mut chunk = Chunk::new_active(1, 100);
     for i in 0..100 {
@@ -307,7 +307,7 @@ async fn test_high_memory_leak_failed_seal() {
     }
 
     // Try to seal to invalid path (should fail)
-    let result = chunk.seal("/invalid/path/chunk.gor".into()).await;
+    let result = chunk.seal("/invalid/path/chunk.kub".into()).await;
 
     assert!(result.is_err(), "Seal to invalid path should fail");
 
@@ -386,12 +386,12 @@ async fn test_high_seal_retry_after_failure() {
     }
 
     // First seal attempt (to invalid path)
-    let result1 = chunk.seal("/invalid/path/chunk.gor".into()).await;
+    let result1 = chunk.seal("/invalid/path/chunk.kub".into()).await;
     assert!(result1.is_err());
 
     // Second seal attempt (to valid path)
     let temp_dir = tempfile::TempDir::new().unwrap();
-    let path = temp_dir.path().join("chunk.gor");
+    let path = temp_dir.path().join("chunk.kub");
     let result2 = chunk.seal(path).await;
 
     // Should succeed, but fails because data was taken in first attempt
@@ -414,7 +414,7 @@ async fn test_security_path_traversal() {
         .unwrap();
 
     // Try to write outside allowed directory
-    let malicious_path = "/tmp/../../etc/chunk.gor";
+    let malicious_path = "/tmp/../../etc/chunk.kub";
     let result = chunk.seal(malicious_path.into()).await;
 
     // Should be rejected (path validation)
@@ -440,7 +440,7 @@ async fn test_security_symlink_attack() {
     let link_path = safe_dir.join("link");
     symlink(&attack_dir, &link_path).unwrap();
 
-    let chunk_path = link_path.join("chunk.gor");
+    let chunk_path = link_path.join("chunk.kub");
 
     let mut chunk = Chunk::new_active(1, 10);
     chunk
@@ -456,7 +456,7 @@ async fn test_security_symlink_attack() {
 
     if result.is_ok() {
         // Check where file actually was written
-        let actual_path = attack_dir.join("chunk.gor");
+        let actual_path = attack_dir.join("chunk.kub");
         if actual_path.exists() {
             println!("WARNING: Symlink followed, wrote to different directory!");
         }
@@ -577,7 +577,7 @@ async fn test_outlier_single_point_chunk() {
         .unwrap();
 
     let temp_dir = tempfile::TempDir::new().unwrap();
-    let path = temp_dir.path().join("single.gor");
+    let path = temp_dir.path().join("single.kub");
 
     chunk.seal(path.clone()).await.unwrap();
 

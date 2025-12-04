@@ -78,19 +78,19 @@ jobs:
           # Standard Linux (glibc)
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            asset_name: gorilla-tsdb-linux-amd64
+            asset_name: Kuba-tsdb-linux-amd64
           # Static Linux (musl) for maximum portability
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
-            asset_name: gorilla-tsdb-linux-musl-amd64
+            asset_name: Kuba-tsdb-linux-musl-amd64
           # macOS (Intel)
           - target: x86_64-apple-darwin
             os: macos-latest
-            asset_name: gorilla-tsdb-darwin-amd64
+            asset_name: Kuba-tsdb-darwin-amd64
           # macOS (Apple Silicon)
           - target: aarch64-apple-darwin
             os: macos-latest
-            asset_name: gorilla-tsdb-darwin-arm64
+            asset_name: Kuba-tsdb-darwin-arm64
 
     steps:
       - name: Checkout repository
@@ -135,7 +135,7 @@ jobs:
 
           mkdir -p release
           # Ensure binary is copied with the intended final name
-          cp "$BINARY" release/gorilla-tsdb 
+          cp "$BINARY" release/Kuba-tsdb 
           cp README.md LICENSE* release/ 2>/dev/null || true
           
           tar -czvf $ASSET_FILE -C release .
@@ -230,7 +230,7 @@ jobs:
 
           # --- RELEASE_NOTES.md Header ---
           cat > RELEASE_NOTES.md << HEADER
-          ## Gorilla TSDB $VERSION
+          ## Kuba TSDB $VERSION
 
           High-performance time-series database.
 
@@ -266,7 +266,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          name: Gorilla TSDB ${{ needs.validate.outputs.version }}
+          name: Kuba TSDB ${{ needs.validate.outputs.version }}
           body_path: RELEASE_NOTES.md
           # Uploads all .tar.gz files downloaded in the artifacts directory
           files: artifacts/**/*.tar.gz

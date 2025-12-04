@@ -4,9 +4,9 @@
 //! the performance claims in the implementation.
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use gorilla_tsdb::storage::chunk::Chunk;
-use gorilla_tsdb::storage::mmap::MmapChunk;
-use gorilla_tsdb::types::DataPoint;
+use kuba_tsdb::storage::chunk::Chunk;
+use kuba_tsdb::storage::mmap::MmapChunk;
+use kuba_tsdb::types::DataPoint;
 use std::hint::black_box;
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -14,7 +14,7 @@ use tempfile::TempDir;
 /// Create a test chunk with specified number of points
 async fn create_test_chunk(points: usize) -> (TempDir, PathBuf) {
     let temp_dir = TempDir::new().unwrap();
-    let path = temp_dir.path().join("bench_chunk.gor");
+    let path = temp_dir.path().join("bench_chunk.kub");
 
     let mut chunk = Chunk::new_active(1, points);
     for i in 0..points {

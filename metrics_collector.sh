@@ -1,5 +1,5 @@
 #!/bin/bash
-# Metrics Collector for Gorilla TSDB
+# Metrics Collector for Kuba TSDB
 # Collects CPU stats every 10 seconds and pushes to the database
 
 TSDB_URL="${TSDB_URL:-http://localhost:8090}"

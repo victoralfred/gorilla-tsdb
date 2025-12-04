@@ -1,13 +1,13 @@
 [package]
-name = "gorilla-tsdb"
+name = "Kuba-tsdb"
 version = "0.1.0"
 edition = "2021"
 authors = ["Victor Oseghale"]
-description = "High-performance time-series database with Gorilla compression"
+description = "High-performance time-series database with Kuba compression"
 license = "MIT"
 
 [lib]
-name = "gorilla_tsdb"
+name = "kuba_tsdb"
 path = "src/lib.rs"
 
 [[bin]]

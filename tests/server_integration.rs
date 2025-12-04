@@ -1,6 +1,6 @@
 //! HTTP Server Integration Tests
 //!
-//! This module provides comprehensive integration tests for the Gorilla TSDB HTTP server.
+//! This module provides comprehensive integration tests for the Kuba TSDB HTTP server.
 //! These tests verify the REST API endpoints, configuration handling, query routing,
 //! and request/response formatting.
 //!
@@ -22,8 +22,8 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use gorilla_tsdb::{
-    compression::gorilla::GorillaCompressor,
+use kuba_tsdb::{
+    compression::kuba::KubaCompressor,
     engine::{DatabaseConfig, InMemoryTimeIndex, TimeSeriesDB, TimeSeriesDBBuilder},
     query::subscription::{SubscriptionConfig, SubscriptionManager},
     storage::LocalDiskEngine,
@@ -222,7 +222,7 @@ fn generate_series_id(metric: &str, tags: &HashMap<String, String>) -> SeriesId 
 }
 
 /// Compute aggregation over data points
-fn compute_aggregation(function: &str, points: &[gorilla_tsdb::types::DataPoint]) -> Option<f64> {
+fn compute_aggregation(function: &str, points: &[kuba_tsdb::types::DataPoint]) -> Option<f64> {
     if points.is_empty() {
         return Some(f64::NAN);
     }
@@ -409,10 +409,10 @@ async fn write_points(
     };
 
     // Convert to DataPoints
-    let points: Vec<gorilla_tsdb::types::DataPoint> = req
+    let points: Vec<kuba_tsdb::types::DataPoint> = req
         .points
         .iter()
-        .map(|p| gorilla_tsdb::types::DataPoint::new(series_id, p.timestamp, p.value))
+        .map(|p| kuba_tsdb::types::DataPoint::new(series_id, p.timestamp, p.value))
         .collect();
 
     // Write to database
@@ -445,7 +445,7 @@ async fn query_points(
     State(state): State<Arc<TestAppState>>,
     Query(params): Query<QueryParams>,
 ) -> impl IntoResponse {
-    use gorilla_tsdb::types::TimeRange;
+    use kuba_tsdb::types::TimeRange;
 
     // Validate time range
     if params.start > params.end {
@@ -643,7 +643,7 @@ async fn find_series(
     State(state): State<Arc<TestAppState>>,
     Query(params): Query<FindSeriesParams>,
 ) -> impl IntoResponse {
-    use gorilla_tsdb::types::TagFilter;
+    use kuba_tsdb::types::TagFilter;
 
     let tag_filter = match params.tags {
         Some(tags) if !tags.is_empty() => TagFilter::Exact(tags),
@@ -739,7 +739,7 @@ async fn create_test_server() -> (Router, TempDir) {
     );
 
     let index = InMemoryTimeIndex::new();
-    let compressor = GorillaCompressor::new();
+    let compressor = KubaCompressor::new();
 
     let db_config = DatabaseConfig {
         data_dir: temp_dir.path().to_path_buf(),
@@ -749,7 +749,7 @@ async fn create_test_server() -> (Router, TempDir) {
         custom_options: HashMap::new(),
     };
 
-    let storage_dyn: Arc<dyn gorilla_tsdb::engine::traits::StorageEngine + Send + Sync> =
+    let storage_dyn: Arc<dyn kuba_tsdb::engine::traits::StorageEngine + Send + Sync> =
         storage.clone();
 
     let db = TimeSeriesDBBuilder::new()
@@ -1634,7 +1634,7 @@ async fn test_query_exact_boundaries() {
 /// Test compute_aggregation with empty points
 #[tokio::test]
 async fn test_compute_aggregation_empty() {
-    let points: Vec<gorilla_tsdb::types::DataPoint> = vec![];
+    let points: Vec<kuba_tsdb::types::DataPoint> = vec![];
     let result = compute_aggregation("count", &points);
     assert!(result.unwrap().is_nan());
 }
@@ -1643,14 +1643,14 @@ async fn test_compute_aggregation_empty() {
 #[tokio::test]
 async fn test_compute_aggregation_variance() {
     let points = vec![
-        gorilla_tsdb::types::DataPoint::new(1, 1000, 2.0),
-        gorilla_tsdb::types::DataPoint::new(1, 2000, 4.0),
-        gorilla_tsdb::types::DataPoint::new(1, 3000, 4.0),
-        gorilla_tsdb::types::DataPoint::new(1, 4000, 4.0),
-        gorilla_tsdb::types::DataPoint::new(1, 5000, 5.0),
-        gorilla_tsdb::types::DataPoint::new(1, 6000, 5.0),
-        gorilla_tsdb::types::DataPoint::new(1, 7000, 7.0),
-        gorilla_tsdb::types::DataPoint::new(1, 8000, 9.0),
+        kuba_tsdb::types::DataPoint::new(1, 1000, 2.0),
+        kuba_tsdb::types::DataPoint::new(1, 2000, 4.0),
+        kuba_tsdb::types::DataPoint::new(1, 3000, 4.0),
+        kuba_tsdb::types::DataPoint::new(1, 4000, 4.0),
+        kuba_tsdb::types::DataPoint::new(1, 5000, 5.0),
+        kuba_tsdb::types::DataPoint::new(1, 6000, 5.0),
+        kuba_tsdb::types::DataPoint::new(1, 7000, 7.0),
+        kuba_tsdb::types::DataPoint::new(1, 8000, 9.0),
     ];
 
     let result = compute_aggregation("variance", &points);
@@ -1661,7 +1661,7 @@ async fn test_compute_aggregation_variance() {
 /// Test compute_aggregation with unknown function
 #[tokio::test]
 async fn test_compute_aggregation_unknown() {
-    let points = vec![gorilla_tsdb::types::DataPoint::new(1, 1000, 42.0)];
+    let points = vec![kuba_tsdb::types::DataPoint::new(1, 1000, 42.0)];
     let result = compute_aggregation("unknown_function", &points);
     assert!(result.is_none());
 }

@@ -10,7 +10,7 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use gorilla_tsdb::redis::metrics::{RedisMetrics, MetricsConfig};
+//! use kuba_tsdb::redis::metrics::{RedisMetrics, MetricsConfig};
 //!
 //! let metrics = RedisMetrics::new(MetricsConfig::default());
 //!

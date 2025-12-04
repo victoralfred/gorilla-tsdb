@@ -6,7 +6,7 @@
 //! - Memory safety: resource cleanup, leak detection
 //! - Security: path traversal, symlink attacks, permission issues
 
-use gorilla_tsdb::storage::{DirectoryMaintenance, SeriesMetadata, WriteLock};
+use kuba_tsdb::storage::{DirectoryMaintenance, SeriesMetadata, WriteLock};
 use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::fs;
@@ -180,7 +180,7 @@ async fn test_cleanup_empty_chunk_files() {
     let temp_dir = TempDir::new().unwrap();
 
     // Create empty chunk files
-    fs::write(temp_dir.path().join("empty.gor"), b"")
+    fs::write(temp_dir.path().join("empty.kub"), b"")
         .await
         .unwrap();
 
@@ -198,7 +198,7 @@ async fn test_cleanup_permission_denied() {
     use std::os::unix::fs::PermissionsExt;
 
     let temp_dir = TempDir::new().unwrap();
-    let chunk_path = temp_dir.path().join("readonly.gor");
+    let chunk_path = temp_dir.path().join("readonly.kub");
 
     // Create file and make it read-only
     fs::write(&chunk_path, b"data").await.unwrap();
@@ -238,8 +238,8 @@ async fn test_cleanup_permission_denied() {
 #[tokio::test]
 async fn test_validation_with_symlinks() {
     let temp_dir = TempDir::new().unwrap();
-    let real_file = temp_dir.path().join("real.gor");
-    let symlink = temp_dir.path().join("link.gor");
+    let real_file = temp_dir.path().join("real.kub");
+    let symlink = temp_dir.path().join("link.kub");
 
     // Create real file and symlink
     fs::write(&real_file, b"data").await.unwrap();
@@ -270,13 +270,13 @@ async fn test_cleanup_unicode_filenames() {
     let temp_dir = TempDir::new().unwrap();
 
     // Create files with unicode names
-    fs::write(temp_dir.path().join("测试.gor"), b"test")
+    fs::write(temp_dir.path().join("测试.kub"), b"test")
         .await
         .unwrap();
-    fs::write(temp_dir.path().join("файл.gor"), b"file")
+    fs::write(temp_dir.path().join("файл.kub"), b"file")
         .await
         .unwrap();
-    fs::write(temp_dir.path().join("📊.gor"), b"chart")
+    fs::write(temp_dir.path().join("📊.kub"), b"chart")
         .await
         .unwrap();
 
@@ -384,7 +384,7 @@ async fn test_cleanup_performance_many_files() {
 
     // Create 1000 chunk files
     for i in 0..1000 {
-        fs::write(temp_dir.path().join(format!("chunk_{}.gor", i)), b"data")
+        fs::write(temp_dir.path().join(format!("chunk_{}.kub", i)), b"data")
             .await
             .unwrap();
     }
@@ -421,7 +421,7 @@ async fn test_validation_performance_large_directory() {
     for i in 0..500 {
         let mut header = vec![0u8; 64];
         header[0..4].copy_from_slice(b"GORL"); // Magic number
-        fs::write(temp_dir.path().join(format!("chunk_{}.gor", i)), &header)
+        fs::write(temp_dir.path().join(format!("chunk_{}.kub", i)), &header)
             .await
             .unwrap();
     }
@@ -451,7 +451,7 @@ async fn test_empty_directory_cleanup_scale() {
 
         // Half have data
         if i % 2 == 0 {
-            fs::write(series_dir.join("chunk_0.gor"), b"data")
+            fs::write(series_dir.join("chunk_0.kub"), b"data")
                 .await
                 .unwrap();
         } else {
@@ -579,9 +579,9 @@ async fn test_path_traversal_prevention() {
 
     // Try to create files with path traversal
     let malicious_paths = vec![
-        "../../../etc/passwd.gor",
-        "..\\..\\..\\windows\\system32.gor",
-        "./../../sensitive.gor",
+        "../../../etc/passwd.kub",
+        "..\\..\\..\\windows\\system32.kub",
+        "./../../sensitive.kub",
     ];
 
     for mal_path in malicious_paths {
@@ -753,10 +753,10 @@ async fn test_validation_symlink_escape() {
     let outside_dir = TempDir::new().unwrap();
 
     // Create symlink pointing outside
-    let outside_file = outside_dir.path().join("outside.gor");
+    let outside_file = outside_dir.path().join("outside.kub");
     fs::write(&outside_file, b"outside data").await.unwrap();
 
-    let symlink = temp_dir.path().join("escape.gor");
+    let symlink = temp_dir.path().join("escape.kub");
     tokio::fs::symlink(&outside_file, &symlink).await.unwrap();
 
     // Create metadata

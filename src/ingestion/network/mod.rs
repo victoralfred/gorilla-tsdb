@@ -30,7 +30,7 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use gorilla_tsdb::ingestion::network::{NetworkConfig, NetworkListener};
+//! use kuba_tsdb::ingestion::network::{NetworkConfig, NetworkListener};
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let config = NetworkConfig::default();

@@ -1,6 +1,6 @@
-//! Gorilla compression implementation for time-series data
+//! Kuba compression implementation for time-series data
 //!
-//! This module implements Facebook's Gorilla compression algorithm, which achieves excellent
+//! This module implements Facebook's Kuba compression algorithm, which achieves excellent
 //! compression ratios (typically 12:1) for time-series data through two key techniques:
 //!
 //! # Algorithm Overview
@@ -49,12 +49,12 @@
 //! # Example
 //!
 //! ```rust
-//! use gorilla_tsdb::compression::gorilla::GorillaCompressor;
-//! use gorilla_tsdb::types::DataPoint;
-//! use gorilla_tsdb::engine::traits::Compressor;
+//! use kuba_tsdb::compression::kuba::KubaCompressor;
+//! use kuba_tsdb::types::DataPoint;
+//! use kuba_tsdb::engine::traits::Compressor;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! let compressor = GorillaCompressor::new();
+//! let compressor = KubaCompressor::new();
 //!
 //! // Create time-series data (e.g., CPU usage every 10 seconds)
 //! let points = vec![
@@ -77,7 +77,7 @@
 //!
 //! # References
 //!
-//! - Paper: "Gorilla: A Fast, Scalable, In-Memory Time Series Database"
+//! - Paper: "Kuba: A Fast, Scalable, In-Memory Time Series Database"
 //! - URL: <http://www.vldb.org/pvldb/vol8/p1816-teller.pdf>
 //! - Authors: Tuomas Pelkonen et al., Facebook Inc.
 
@@ -97,9 +97,9 @@ use tracing::warn;
 /// Deltas larger than this are logged as warnings but still processed
 const MAX_REASONABLE_DELTA_NS: i64 = 10 * 365 * 24 * 60 * 60 * 1_000_000_000; // ~10 years
 
-/// Gorilla compression implementation
+/// Kuba compression implementation
 ///
-/// `GorillaCompressor` implements the Compressor trait to provide Facebook's Gorilla
+/// `KubaCompressor` implements the Compressor trait to provide Facebook's Kuba
 /// compression algorithm for time-series data. It maintains compression statistics
 /// and configuration options.
 ///
@@ -117,32 +117,32 @@ const MAX_REASONABLE_DELTA_NS: i64 = 10 * 365 * 24 * 60 * 60 * 1_000_000_000; //
 /// # Example
 ///
 /// ```rust
-/// use gorilla_tsdb::compression::gorilla::{GorillaCompressor, GorillaConfig};
+/// use kuba_tsdb::compression::kuba::{KubaCompressor, KubaConfig};
 ///
 /// // Create with default configuration
-/// let compressor = GorillaCompressor::new();
+/// let compressor = KubaCompressor::new();
 ///
 /// // Or customize the configuration
-/// let config = GorillaConfig {
+/// let config = KubaConfig {
 ///     block_size: 2000,
 ///     enable_checksum: true,
 /// };
-/// let custom_compressor = GorillaCompressor::with_config(config);
+/// let custom_compressor = KubaCompressor::with_config(config);
 /// ```
-pub struct GorillaCompressor {
+pub struct KubaCompressor {
     /// Compression statistics (thread-safe via Mutex)
     /// Tracks total compressed/decompressed blocks, average ratios, and timing
     stats: Arc<Mutex<CompressionStats>>,
 
     /// Configuration options for the compressor
-    config: GorillaConfig,
+    config: KubaConfig,
 }
 
-/// Configuration options for Gorilla compressor
+/// Configuration options for Kuba compressor
 ///
 /// These settings control the behavior of the compression algorithm.
 #[derive(Clone, Debug)]
-pub struct GorillaConfig {
+pub struct KubaConfig {
     /// Target block size (number of data points per compressed block)
     ///
     /// Larger blocks achieve better compression but increase memory usage.
@@ -156,7 +156,7 @@ pub struct GorillaConfig {
     pub enable_checksum: bool,
 }
 
-impl Default for GorillaConfig {
+impl Default for KubaConfig {
     fn default() -> Self {
         Self {
             block_size: 1000,
@@ -165,14 +165,14 @@ impl Default for GorillaConfig {
     }
 }
 
-impl GorillaCompressor {
-    /// Create a new Gorilla compressor with default configuration
+impl KubaCompressor {
+    /// Create a new Kuba compressor with default configuration
     pub fn new() -> Self {
-        Self::with_config(GorillaConfig::default())
+        Self::with_config(KubaConfig::default())
     }
 
-    /// Create a new Gorilla compressor with custom configuration
-    pub fn with_config(config: GorillaConfig) -> Self {
+    /// Create a new Kuba compressor with custom configuration
+    pub fn with_config(config: KubaConfig) -> Self {
         Self {
             stats: Arc::new(Mutex::new(CompressionStats::default())),
             config,
@@ -181,7 +181,7 @@ impl GorillaCompressor {
 
     /// Compress timestamps using delta-of-delta encoding with variable bit packing
     ///
-    /// This is the core of Gorilla's timestamp compression. It exploits the regularity
+    /// This is the core of Kuba's timestamp compression. It exploits the regularity
     /// of time-series timestamps by storing the "delta of deltas" instead of raw values.
     ///
     /// # Algorithm Steps
@@ -660,16 +660,16 @@ impl GorillaCompressor {
     }
 }
 
-impl Default for GorillaCompressor {
+impl Default for KubaCompressor {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[async_trait]
-impl Compressor for GorillaCompressor {
+impl Compressor for KubaCompressor {
     fn algorithm_id(&self) -> &str {
-        "gorilla-v1"
+        "Kuba-v1"
     }
 
     async fn compress(&self, points: &[DataPoint]) -> Result<CompressedBlock, CompressionError> {
@@ -864,7 +864,7 @@ impl Compressor for GorillaCompressor {
     }
 
     fn estimate_ratio(&self, _sample: &[DataPoint]) -> f64 {
-        // Typical Gorilla compression ratio based on research
+        // Typical Kuba compression ratio based on research
         12.0
     }
 
@@ -889,7 +889,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_compress_decompress_single_point() {
-        let compressor = GorillaCompressor::new();
+        let compressor = KubaCompressor::new();
         let points = vec![DataPoint {
             series_id: 1,
             timestamp: 1000,
@@ -906,7 +906,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_compress_decompress_multiple_points() {
-        let compressor = GorillaCompressor::new();
+        let compressor = KubaCompressor::new();
         let points = create_test_points(100);
 
         let compressed = compressor.compress(&points).await.unwrap();
@@ -922,7 +922,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_compression_ratio() {
-        let compressor = GorillaCompressor::new();
+        let compressor = KubaCompressor::new();
         let points = create_test_points(1000);
 
         let original_size = std::mem::size_of_val(points.as_slice());
@@ -937,7 +937,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_checksum_verification() {
-        let compressor = GorillaCompressor::new();
+        let compressor = KubaCompressor::new();
         let points = create_test_points(10);
 
         let mut compressed = compressor.compress(&points).await.unwrap();
@@ -956,7 +956,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_empty_points() {
-        let compressor = GorillaCompressor::new();
+        let compressor = KubaCompressor::new();
         let points: Vec<DataPoint> = vec![];
 
         let result = compressor.compress(&points).await;

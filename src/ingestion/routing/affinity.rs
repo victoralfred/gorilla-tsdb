@@ -18,7 +18,7 @@
 //! # Example
 //!
 //! ```rust
-//! use gorilla_tsdb::ingestion::routing::{RoutingStrategy, TagAffinityRouter};
+//! use kuba_tsdb::ingestion::routing::{RoutingStrategy, TagAffinityRouter};
 //!
 //! // Route by "host" tag - all series from same host go to same shard
 //! let router = TagAffinityRouter::new(4, "host".to_string());

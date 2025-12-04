@@ -47,7 +47,7 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use gorilla_tsdb::aggregation::{MetadataStore, SpaceTimeAggregator};
+//! use kuba_tsdb::aggregation::{MetadataStore, SpaceTimeAggregator};
 //!
 //! // Create metadata store
 //! let store = MetadataStore::in_memory();

@@ -6,8 +6,8 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use gorilla_tsdb::query::operators::sort::SortOperator;
-//! use gorilla_tsdb::query::ast::OrderDirection;
+//! use kuba_tsdb::query::operators::sort::SortOperator;
+//! use kuba_tsdb::query::ast::OrderDirection;
 //!
 //! // Sort by timestamp descending
 //! let sorted = SortOperator::new(

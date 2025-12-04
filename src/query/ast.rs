@@ -14,8 +14,8 @@
 //! # Example
 //!
 //! ```rust
-//! use gorilla_tsdb::query::ast::{QueryBuilder, Aggregation, AggregationFunction};
-//! use gorilla_tsdb::types::TimeRange;
+//! use kuba_tsdb::query::ast::{QueryBuilder, Aggregation, AggregationFunction};
+//! use kuba_tsdb::types::TimeRange;
 //! use std::time::Duration;
 //!
 //! // Build a windowed average query

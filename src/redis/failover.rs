@@ -10,8 +10,8 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use gorilla_tsdb::redis::{RedisConfig, RedisPool};
-//! use gorilla_tsdb::redis::failover::{FailoverManager, FailoverConfig};
+//! use kuba_tsdb::redis::{RedisConfig, RedisPool};
+//! use kuba_tsdb::redis::failover::{FailoverManager, FailoverConfig};
 //! use std::sync::Arc;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {

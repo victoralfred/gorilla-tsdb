@@ -13,8 +13,8 @@
 //! # Example
 //!
 //! ```rust
-//! use gorilla_tsdb::aggregation::index::{BitmapIndex, TagFilter};
-//! use gorilla_tsdb::aggregation::data_model::{TagKeyId, TagValueId};
+//! use kuba_tsdb::aggregation::index::{BitmapIndex, TagFilter};
+//! use kuba_tsdb::aggregation::data_model::{TagKeyId, TagValueId};
 //!
 //! let index = BitmapIndex::new();
 //!

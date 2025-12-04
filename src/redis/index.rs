@@ -17,9 +17,9 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use gorilla_tsdb::redis::{RedisConfig, RedisTimeIndex};
-//! use gorilla_tsdb::engine::traits::{TimeIndex, SeriesMetadata, ChunkStatus};
-//! use gorilla_tsdb::types::{ChunkId, TimeRange};
+//! use kuba_tsdb::redis::{RedisConfig, RedisTimeIndex};
+//! use kuba_tsdb::engine::traits::{TimeIndex, SeriesMetadata, ChunkStatus};
+//! use kuba_tsdb::types::{ChunkId, TimeRange};
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let index = RedisTimeIndex::new(RedisConfig::default()).await?;
@@ -283,7 +283,7 @@ impl RedisTimeIndex {
                 end_time: time_range.end,
                 point_count: 0,
                 size_bytes: location.size.unwrap_or(0),
-                compression: "gorilla".to_string(),
+                compression: "Kuba".to_string(),
                 status: "sealed".to_string(),
                 created_at: current_time,
                 // ENH-003: Statistics will be populated during compaction or on first scan
@@ -624,7 +624,7 @@ impl TimeIndex for RedisTimeIndex {
             end_time: time_range.end,
             point_count: 0,
             size_bytes: location.size.unwrap_or(0),
-            compression: "gorilla".to_string(),
+            compression: "Kuba".to_string(),
             status: "sealed".to_string(),
             created_at: current_time,
             // ENH-003: Statistics will be populated during compaction or on first scan
@@ -1273,7 +1273,7 @@ mod tests {
             end_time: 2000,
             point_count: 100,
             size_bytes: 4096,
-            compression: "gorilla".to_string(),
+            compression: "Kuba".to_string(),
             status: "sealed".to_string(),
             created_at: 1700000000000,
             min_value: Some(10.0),
@@ -1284,7 +1284,7 @@ mod tests {
         let json = serde_json::to_string(&metadata).unwrap();
         assert!(json.contains("12345"));
         assert!(json.contains("/data/chunks/chunk1.bin"));
-        assert!(json.contains("gorilla"));
+        assert!(json.contains("Kuba"));
 
         // Deserialize
         let deserialized: RedisChunkMetadata = serde_json::from_str(&json).unwrap();
@@ -1294,7 +1294,7 @@ mod tests {
         assert_eq!(deserialized.end_time, 2000);
         assert_eq!(deserialized.point_count, 100);
         assert_eq!(deserialized.size_bytes, 4096);
-        assert_eq!(deserialized.compression, "gorilla");
+        assert_eq!(deserialized.compression, "Kuba");
         assert_eq!(deserialized.status, "sealed");
     }
 
@@ -1307,7 +1307,7 @@ mod tests {
             end_time: 1000,
             point_count: 50,
             size_bytes: 2048,
-            compression: "gorilla".to_string(),
+            compression: "Kuba".to_string(),
             status: "active".to_string(),
             created_at: 0,
             min_value: None,

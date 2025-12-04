@@ -6,7 +6,7 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use gorilla_tsdb::query::operators::limit::LimitOperator;
+//! use kuba_tsdb::query::operators::limit::LimitOperator;
 //!
 //! // Wrap an existing operator with limit and offset
 //! let limited = LimitOperator::new(some_operator, 100, Some(50));

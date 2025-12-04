@@ -1,4 +1,4 @@
-# Gorilla TSDB Deployment Guide
+# Kuba TSDB Deployment Guide
 
 ## Staging Deployment
 
@@ -32,13 +32,13 @@ docker-compose down -v
 
 | Service | Port | Purpose |
 |---------|------|---------|
-| Gorilla TSDB | 8080 | Time-series database |
+| Kuba TSDB | 8080 | Time-series database |
 | Prometheus | 9090 | Metrics collection |
 | Grafana | 3000 | Visualization dashboard |
 
 ### Accessing Services
 
-**Gorilla TSDB API**:
+**Kuba TSDB API**:
 ```bash
 curl http://localhost:8080/health
 ```
@@ -74,17 +74,17 @@ Data is persisted in Docker volumes:
 
 ```bash
 # List volumes
-docker volume ls | grep gorilla
+docker volume ls | grep Kuba
 
 # Inspect volume
-docker volume inspect gorilla-tsdb-staging_tsdb-data
+docker volume inspect Kuba-tsdb-staging_tsdb-data
 
 # Backup data
-docker run --rm -v gorilla-tsdb-staging_tsdb-data:/data \
+docker run --rm -v Kuba-tsdb-staging_tsdb-data:/data \
   -v $(pwd):/backup alpine tar czf /backup/tsdb-backup.tar.gz /data
 
 # Restore data
-docker run --rm -v gorilla-tsdb-staging_tsdb-data:/data \
+docker run --rm -v Kuba-tsdb-staging_tsdb-data:/data \
   -v $(pwd):/backup alpine tar xzf /backup/tsdb-backup.tar.gz -C /
 ```
 
@@ -94,10 +94,10 @@ The TSDB container includes automatic health checks:
 
 ```bash
 # Check health status
-docker inspect --format='{{.State.Health.Status}}' gorilla-tsdb-staging
+docker inspect --format='{{.State.Health.Status}}' Kuba-tsdb-staging
 
 # View health logs
-docker inspect --format='{{range .State.Health.Log}}{{.Output}}{{end}}' gorilla-tsdb-staging
+docker inspect --format='{{range .State.Health.Log}}{{.Output}}{{end}}' Kuba-tsdb-staging
 ```
 
 ### Monitoring
@@ -177,7 +177,7 @@ docker-compose restart
 
 ```bash
 # Check container memory
-docker stats gorilla-tsdb-staging
+docker stats Kuba-tsdb-staging
 
 # Reduce TSDB_CHUNK_SIZE in docker-compose.yml
 # Reduce TSDB_SEAL_DURATION_MS to seal chunks more frequently
@@ -190,7 +190,7 @@ docker stats gorilla-tsdb-staging
 docker-compose config
 
 # Check volume exists
-docker volume inspect gorilla-tsdb-staging_tsdb-data
+docker volume inspect Kuba-tsdb-staging_tsdb-data
 
 # Ensure data directory permissions
 docker-compose exec tsdb ls -la /data

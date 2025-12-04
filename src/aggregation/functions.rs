@@ -19,7 +19,7 @@
 //! # Example
 //!
 //! ```rust
-//! use gorilla_tsdb::aggregation::{topk, moving_avg};
+//! use kuba_tsdb::aggregation::{topk, moving_avg};
 //!
 //! // Create sample series data as (SeriesId, value) tuples
 //! let series_data: Vec<(u128, f64)> = vec![
@@ -95,7 +95,7 @@ impl Ord for RankedSeries {
 /// # Example
 ///
 /// ```rust
-/// use gorilla_tsdb::aggregation::topk;
+/// use kuba_tsdb::aggregation::topk;
 ///
 /// let series: Vec<(u128, f64)> = vec![(1, 10.0), (2, 50.0), (3, 30.0)];
 /// let top_2 = topk(2, series);
@@ -195,7 +195,7 @@ where
 /// # Example
 ///
 /// ```rust
-/// use gorilla_tsdb::aggregation::moving_avg;
+/// use kuba_tsdb::aggregation::moving_avg;
 ///
 /// let values = vec![1.0, 2.0, 3.0, 4.0, 5.0];
 /// let ma = moving_avg(&values, 3);

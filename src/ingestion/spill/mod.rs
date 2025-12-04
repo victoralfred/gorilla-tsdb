@@ -32,8 +32,8 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use gorilla_tsdb::ingestion::spill::{SpillManager, SpillConfig};
-//! use gorilla_tsdb::types::DataPoint;
+//! use kuba_tsdb::ingestion::spill::{SpillManager, SpillConfig};
+//! use kuba_tsdb::types::DataPoint;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let config = SpillConfig::default();

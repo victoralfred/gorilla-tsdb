@@ -23,7 +23,7 @@ use url::Url;
 /// # Examples
 ///
 /// ```rust
-/// use gorilla_tsdb::redis::util::sanitize_url;
+/// use kuba_tsdb::redis::util::sanitize_url;
 ///
 /// // URL with credentials gets them redacted
 /// let url = "redis://admin:secret123@localhost:6379/0";
@@ -75,7 +75,7 @@ pub fn sanitize_url(url: &str) -> String {
 /// # Examples
 ///
 /// ```rust
-/// use gorilla_tsdb::redis::util::extract_host_port;
+/// use kuba_tsdb::redis::util::extract_host_port;
 ///
 /// let (host, port) = extract_host_port("redis://user:pass@localhost:6379").unwrap();
 /// assert_eq!(host, "localhost");
@@ -106,7 +106,7 @@ pub fn extract_host_port(url: &str) -> Option<(String, u16)> {
 /// # Examples
 ///
 /// ```rust
-/// use gorilla_tsdb::redis::util::connection_error_message;
+/// use kuba_tsdb::redis::util::connection_error_message;
 ///
 /// // Error message shows host:port but not credentials
 /// let msg = connection_error_message(

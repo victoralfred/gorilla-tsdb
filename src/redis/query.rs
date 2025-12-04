@@ -9,9 +9,9 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use gorilla_tsdb::redis::{RedisConfig, RedisTimeIndex};
-//! use gorilla_tsdb::redis::query::{QueryPlanner, QueryConfig};
-//! use gorilla_tsdb::types::TimeRange;
+//! use kuba_tsdb::redis::{RedisConfig, RedisTimeIndex};
+//! use kuba_tsdb::redis::query::{QueryPlanner, QueryConfig};
+//! use kuba_tsdb::types::TimeRange;
 //! use std::sync::Arc;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {

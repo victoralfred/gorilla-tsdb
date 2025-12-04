@@ -3,15 +3,15 @@
 //! This module provides the core traits and implementations for the
 //! pluggable engine architecture:
 //!
-//! - **Compressor**: Compression algorithms (Gorilla, Parquet)
+//! - **Compressor**: Compression algorithms (Kuba, Parquet)
 //! - **StorageEngine**: Storage backends (LocalDisk, S3)
 //! - **TimeIndex**: Time-series indexing (Redis, InMemory)
 //!
 //! # Example
 //!
 //! ```rust,ignore
-//! use gorilla_tsdb::engine::{TimeSeriesDBBuilder, DatabaseConfig};
-//! use gorilla_tsdb::engine::stubs::{S3Engine, ParquetCompressor};
+//! use kuba_tsdb::engine::{TimeSeriesDBBuilder, DatabaseConfig};
+//! use kuba_tsdb::engine::stubs::{S3Engine, ParquetCompressor};
 //!
 //! let db = TimeSeriesDBBuilder::new()
 //!     .with_compressor(ParquetCompressor::new(Default::default()))
@@ -23,15 +23,15 @@
 //! This module provides the core traits and implementations for the
 //! pluggable engine architecture:
 //!
-//! - **Compressor**: Compression algorithms (Gorilla, Parquet)
+//! - **Compressor**: Compression algorithms (Kuba, Parquet)
 //! - **StorageEngine**: Storage backends (LocalDisk, S3)
 //! - **TimeIndex**: Time-series indexing (Redis, InMemory)
 //!
 //! # Example
 //!
 //! ```rust,ignore
-//! use gorilla_tsdb::engine::{TimeSeriesDBBuilder, DatabaseConfig};
-//! use gorilla_tsdb::engine::stubs::{S3Engine, ParquetCompressor};
+//! use kuba_tsdb::engine::{TimeSeriesDBBuilder, DatabaseConfig};
+//! use kuba_tsdb::engine::stubs::{S3Engine, ParquetCompressor};
 //!
 //! let db = TimeSeriesDBBuilder::new()
 //!     .with_compressor(ParquetCompressor::new(Default::default()))

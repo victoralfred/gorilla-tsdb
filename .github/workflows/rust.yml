@@ -1,4 +1,4 @@
-# Comprehensive Rust CI/CD Pipeline for Gorilla TSDB
+# Comprehensive Rust CI/CD Pipeline for Kuba TSDB
 # Handles linting, testing, coverage, security audits, and release management
 
 name: Rust CI/CD
@@ -314,7 +314,7 @@ jobs:
           mkdir -p release
           cp target/release/$BINARY_NAME release/
           cp README.md LICENSE* release/ 2>/dev/null || true
-          tar -czvf gorilla-tsdb-${{ github.ref_name }}-linux-amd64.tar.gz -C release .
+          tar -czvf Kuba-tsdb-${{ github.ref_name }}-linux-amd64.tar.gz -C release .
 
       - name: Generate changelog
         id: changelog
@@ -333,7 +333,7 @@ jobs:
         with:
           body_path: CHANGELOG.md
           files: |
-            gorilla-tsdb-${{ github.ref_name }}-linux-amd64.tar.gz
+            Kuba-tsdb-${{ github.ref_name }}-linux-amd64.tar.gz
           draft: false
           prerelease: ${{ contains(github.ref, '-rc') || contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
           # Use GITHUB_TOKEN for creating the release

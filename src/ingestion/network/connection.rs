@@ -75,7 +75,7 @@ impl ConnectionConfig {
 /// # Example
 ///
 /// ```rust
-/// use gorilla_tsdb::ingestion::network::{ConnectionManager, ConnectionConfig};
+/// use kuba_tsdb::ingestion::network::{ConnectionManager, ConnectionConfig};
 /// use std::net::IpAddr;
 ///
 /// let manager = ConnectionManager::new(ConnectionConfig::default());

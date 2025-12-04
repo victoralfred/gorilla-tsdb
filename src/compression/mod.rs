@@ -1,6 +1,6 @@
 //! Compression implementations
 
 pub mod bit_stream;
-pub mod gorilla;
+pub mod kuba;
 
-pub use gorilla::GorillaCompressor;
+pub use kuba::KubaCompressor;

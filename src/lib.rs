@@ -1,7 +1,7 @@
-//! Gorilla TSDB - High-performance time-series database with pluggable engines
+//! Kuba TSDB - High-performance time-series database with pluggable engines
 //!
 //! This library provides a production-ready time-series database with:
-//! - Gorilla compression for 10:1+ compression ratios
+//! - Kuba compression for 10:1+ compression ratios
 //! - Pluggable storage, compression, and indexing engines
 //! - 2M+ points/second ingestion
 //! - Sub-millisecond query latency

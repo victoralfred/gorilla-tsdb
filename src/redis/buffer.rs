@@ -9,9 +9,9 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use gorilla_tsdb::redis::{RedisConfig, RedisPool};
-//! use gorilla_tsdb::redis::buffer::{WriteBuffer, BufferConfig};
-//! use gorilla_tsdb::types::DataPoint;
+//! use kuba_tsdb::redis::{RedisConfig, RedisPool};
+//! use kuba_tsdb::redis::buffer::{WriteBuffer, BufferConfig};
+//! use kuba_tsdb::types::DataPoint;
 //! use std::sync::Arc;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {

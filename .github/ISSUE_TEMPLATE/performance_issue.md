@@ -17,7 +17,7 @@ assignees: ''
 - **RAM**: (e.g., 32GB DDR4)
 - **Storage**: (e.g., NVMe SSD, HDD)
 - **Rust Version**: (output of `rustc --version`)
-- **Gorilla TSDB Version**: (git commit hash or version tag)
+- **Kuba TSDB Version**: (git commit hash or version tag)
 - **Build Profile**: (debug/release)
 
 ## Workload Characteristics

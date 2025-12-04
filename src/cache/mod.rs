@@ -1,4 +1,4 @@
-//! Unified Cache Module for Gorilla TSDB
+//! Unified Cache Module for Kuba TSDB
 //!
 //! This module consolidates all cache-related functionality into a single,
 //! maintainable location. It provides:
@@ -28,7 +28,7 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use gorilla_tsdb::cache::{UnifiedCacheManager, UnifiedCacheStats};
+//! use kuba_tsdb::cache::{UnifiedCacheManager, UnifiedCacheStats};
 //!
 //! // Create unified manager
 //! let manager = UnifiedCacheManager::new(query_cache, storage_cache);

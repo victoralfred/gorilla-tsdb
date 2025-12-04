@@ -26,7 +26,7 @@
 //! # Example
 //!
 //! ```rust
-//! use gorilla_tsdb::ingestion::protocol::{JsonParser, ProtocolParser};
+//! use kuba_tsdb::ingestion::protocol::{JsonParser, ProtocolParser};
 //!
 //! let parser = JsonParser::new();
 //! let input = br#"{"measurement": "cpu", "fields": {"value": 42.5}}"#;

@@ -46,8 +46,8 @@
 //! # Example
 //!
 //! ```rust
-//! use gorilla_tsdb::query::{QueryBuilder, AggregationFunction};
-//! use gorilla_tsdb::types::TimeRange;
+//! use kuba_tsdb::query::{QueryBuilder, AggregationFunction};
+//! use kuba_tsdb::types::TimeRange;
 //! use std::time::Duration;
 //!
 //! // Build a simple select query

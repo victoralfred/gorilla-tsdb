@@ -15,7 +15,7 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use gorilla_tsdb::ingestion::network::HttpListener;
+//! use kuba_tsdb::ingestion::network::HttpListener;
 //! use std::net::SocketAddr;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -530,9 +530,9 @@ async fn handle_ready(State(state): State<AppState>) -> Response {
 /// Returns Prometheus-formatted metrics
 async fn handle_metrics() -> Response {
     // Placeholder - full implementation in observability module
-    let metrics = "# HELP gorilla_tsdb_up Indicates if the server is up\n\
-                   # TYPE gorilla_tsdb_up gauge\n\
-                   gorilla_tsdb_up 1\n";
+    let metrics = "# HELP kuba_tsdb_up Indicates if the server is up\n\
+                   # TYPE kuba_tsdb_up gauge\n\
+                   kuba_tsdb_up 1\n";
 
     (
         StatusCode::OK,

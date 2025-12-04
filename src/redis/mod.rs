@@ -28,8 +28,8 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use gorilla_tsdb::redis::{RedisConfig, RedisTimeIndex};
-//! use gorilla_tsdb::engine::traits::TimeIndex;
+//! use kuba_tsdb::redis::{RedisConfig, RedisTimeIndex};
+//! use kuba_tsdb::engine::traits::TimeIndex;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let config = RedisConfig::default();

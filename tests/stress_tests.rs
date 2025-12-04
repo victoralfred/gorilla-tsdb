@@ -8,9 +8,9 @@
 
 // Allow manual modulo checks since is_multiple_of is unstable on stable Rust (Docker builds)
 #![allow(clippy::manual_is_multiple_of)]
-use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
-use gorilla_tsdb::storage::chunk::Chunk;
-use gorilla_tsdb::types::DataPoint;
+use kuba_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
+use kuba_tsdb::storage::chunk::Chunk;
+use kuba_tsdb::types::DataPoint;
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
@@ -220,7 +220,7 @@ async fn test_memory_stability() {
         }
 
         // Seal to disk
-        let path = format!("/tmp/stress_test_chunk_{}.gor", total_chunks_sealed);
+        let path = format!("/tmp/stress_test_chunk_{}.kub", total_chunks_sealed);
         chunk.seal(path.into()).await.unwrap();
         total_chunks_sealed += 1;
 
@@ -248,7 +248,7 @@ async fn test_memory_stability() {
 
     // Cleanup
     for i in 0..total_chunks_sealed {
-        let _ = std::fs::remove_file(format!("/tmp/stress_test_chunk_{}.gor", i));
+        let _ = std::fs::remove_file(format!("/tmp/stress_test_chunk_{}.kub", i));
     }
 }
 
@@ -282,7 +282,7 @@ async fn test_concurrent_seal_stress() {
             }
 
             // Seal to disk
-            let path = format!("/tmp/concurrent_seal_test_{}.gor", chunk_id);
+            let path = format!("/tmp/concurrent_seal_test_{}.kub", chunk_id);
             let result = chunk.seal(path.into()).await;
 
             result.is_ok()
@@ -315,7 +315,7 @@ async fn test_concurrent_seal_stress() {
 
     // Cleanup
     for i in 0..NUM_CONCURRENT_SEALS {
-        let _ = std::fs::remove_file(format!("/tmp/concurrent_seal_test_{}.gor", i));
+        let _ = std::fs::remove_file(format!("/tmp/concurrent_seal_test_{}.kub", i));
     }
 }
 
@@ -346,7 +346,7 @@ async fn test_disk_full_recovery() {
     }
 
     // Try to seal to invalid path (simulates disk full)
-    let invalid_path = "/dev/null/invalid/path/chunk.gor";
+    let invalid_path = "/dev/null/invalid/path/chunk.kub";
     let result = chunk1.seal(invalid_path.into()).await;
 
     println!(
@@ -373,7 +373,7 @@ async fn test_disk_full_recovery() {
     }
 
     // Seal to valid path (recovery by creating new chunk)
-    let valid_path = "/tmp/recovery_test_chunk.gor";
+    let valid_path = "/tmp/recovery_test_chunk.kub";
     let result = chunk2.seal(valid_path.into()).await;
 
     println!(

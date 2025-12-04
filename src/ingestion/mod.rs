@@ -21,8 +21,8 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use gorilla_tsdb::ingestion::{IngestionPipeline, IngestionConfig};
-//! use gorilla_tsdb::types::DataPoint;
+//! use kuba_tsdb::ingestion::{IngestionPipeline, IngestionConfig};
+//! use kuba_tsdb::types::DataPoint;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! // Create pipeline with default config

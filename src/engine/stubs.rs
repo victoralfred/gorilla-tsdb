@@ -40,8 +40,8 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use gorilla_tsdb::engine::stubs::{InMemoryTimeIndex, S3Engine, S3Config};
-//! use gorilla_tsdb::engine::traits::{TimeIndex, StorageEngine};
+//! use kuba_tsdb::engine::stubs::{InMemoryTimeIndex, S3Engine, S3Config};
+//! use kuba_tsdb::engine::traits::{TimeIndex, StorageEngine};
 //!
 //! // Create an in-memory index for testing
 //! let index = InMemoryTimeIndex::new();
@@ -173,7 +173,7 @@ impl fmt::Debug for S3Config {
 impl Default for S3Config {
     fn default() -> Self {
         Self {
-            bucket: "gorilla-tsdb".to_string(),
+            bucket: "Kuba-tsdb".to_string(),
             region: "us-east-1".to_string(),
             endpoint: None,
             access_key_id: None,
@@ -214,7 +214,7 @@ impl S3Config {
 /// # Example
 ///
 /// ```rust,ignore
-/// use gorilla_tsdb::engine::stubs::{S3Engine, S3Config};
+/// use kuba_tsdb::engine::stubs::{S3Engine, S3Config};
 ///
 /// let config = S3Config {
 ///     bucket: "my-bucket".to_string(),
@@ -267,7 +267,7 @@ impl S3Engine {
     /// Generate S3 object key for a chunk
     fn object_key(&self, series_id: SeriesId, chunk_id: &ChunkId) -> String {
         format!(
-            "{}series_{}/chunk_{}.gor",
+            "{}series_{}/chunk_{}.kub",
             self.config.prefix, series_id, chunk_id.0
         )
     }
@@ -518,7 +518,7 @@ impl Default for ParquetConfig {
 /// # Example
 ///
 /// ```rust,ignore
-/// use gorilla_tsdb::engine::stubs::{ParquetCompressor, ParquetConfig};
+/// use kuba_tsdb::engine::stubs::{ParquetCompressor, ParquetConfig};
 ///
 /// let config = ParquetConfig {
 ///     compression_codec: "zstd".to_string(),
@@ -1040,7 +1040,7 @@ mod tests {
     #[test]
     fn test_s3_config_default() {
         let config = S3Config::default();
-        assert_eq!(config.bucket, "gorilla-tsdb");
+        assert_eq!(config.bucket, "Kuba-tsdb");
         assert_eq!(config.region, "us-east-1");
         assert!(config.encryption_enabled);
     }
@@ -1054,7 +1054,7 @@ mod tests {
         let key = engine.object_key(123, &chunk_id);
         assert_eq!(
             key,
-            "chunks/series_123/chunk_550e8400-e29b-41d4-a716-446655440000.gor"
+            "chunks/series_123/chunk_550e8400-e29b-41d4-a716-446655440000.kub"
         );
     }
 
@@ -1121,7 +1121,7 @@ mod tests {
         // Add chunk
         let location = ChunkLocation {
             engine_id: "test".to_string(),
-            path: "/test/chunk.gor".to_string(),
+            path: "/test/chunk.kub".to_string(),
             offset: None,
             size: Some(1024),
         };

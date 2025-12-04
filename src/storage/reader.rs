@@ -11,8 +11,8 @@
 //! # Example
 //!
 //! ```no_run
-//! use gorilla_tsdb::storage::reader::{ChunkReader, QueryOptions};
-//! use gorilla_tsdb::types::DataPoint;
+//! use kuba_tsdb::storage::reader::{ChunkReader, QueryOptions};
+//! use kuba_tsdb::types::DataPoint;
 //!
 //! # async fn example() -> Result<(), String> {
 //! let reader = ChunkReader::new();
@@ -25,12 +25,12 @@
 //!     use_mmap: true,
 //! };
 //!
-//! let points = reader.read_chunk("/data/chunk_001.gor", options).await?;
+//! let points = reader.read_chunk("/data/chunk_001.kub", options).await?;
 //! println!("Read {} points", points.len());
 //! # Ok(())
 //! # }
 //! ```
-use crate::compression::gorilla::GorillaCompressor;
+use crate::compression::kuba::KubaCompressor;
 use crate::engine::traits::Compressor;
 use crate::storage::chunk::Chunk;
 use crate::storage::mmap::MmapChunk;
@@ -71,7 +71,7 @@ impl Default for QueryOptions {
 /// High-level chunk reader with query capabilities
 pub struct ChunkReader {
     /// Compressor/decompressor for chunk data
-    compressor: Arc<GorillaCompressor>,
+    compressor: Arc<KubaCompressor>,
 }
 
 impl ChunkReader {
@@ -80,13 +80,13 @@ impl ChunkReader {
     /// # Example
     ///
     /// ```
-    /// use gorilla_tsdb::storage::reader::ChunkReader;
+    /// use kuba_tsdb::storage::reader::ChunkReader;
     ///
     /// let reader = ChunkReader::new();
     /// ```
     pub fn new() -> Self {
         Self {
-            compressor: Arc::new(GorillaCompressor::new()),
+            compressor: Arc::new(KubaCompressor::new()),
         }
     }
 
@@ -108,7 +108,7 @@ impl ChunkReader {
     /// # Example
     ///
     /// ```no_run
-    /// # use gorilla_tsdb::storage::reader::{ChunkReader, QueryOptions};
+    /// # use kuba_tsdb::storage::reader::{ChunkReader, QueryOptions};
     /// # async fn example() -> Result<(), String> {
     /// let reader = ChunkReader::new();
     ///
@@ -118,7 +118,7 @@ impl ChunkReader {
     ///     ..Default::default()
     /// };
     ///
-    /// let points = reader.read_chunk("/data/chunk.gor", options).await?;
+    /// let points = reader.read_chunk("/data/chunk.kub", options).await?;
     /// # Ok(())
     /// # }
     /// ```
@@ -160,14 +160,14 @@ impl ChunkReader {
     /// # Example
     ///
     /// ```no_run
-    /// # use gorilla_tsdb::storage::reader::{ChunkReader, QueryOptions};
+    /// # use kuba_tsdb::storage::reader::{ChunkReader, QueryOptions};
     /// # async fn example() -> Result<(), String> {
     /// let reader = ChunkReader::new();
     ///
     /// let paths = vec![
-    ///     "/data/chunk_001.gor".into(),
-    ///     "/data/chunk_002.gor".into(),
-    ///     "/data/chunk_003.gor".into(),
+    ///     "/data/chunk_001.kub".into(),
+    ///     "/data/chunk_002.kub".into(),
+    ///     "/data/chunk_003.kub".into(),
     /// ];
     ///
     /// let points = reader.read_chunks_parallel(paths, QueryOptions::default()).await?;
@@ -295,7 +295,7 @@ impl ChunkReader {
 
         // Create compressed block for decompression
         let compressed_block = crate::engine::traits::CompressedBlock {
-            algorithm_id: "gorilla".to_string(),
+            algorithm_id: "Kuba".to_string(),
             original_size: header.uncompressed_size as usize,
             compressed_size: header.compressed_size as usize,
             checksum: header.checksum,
@@ -382,7 +382,7 @@ mod tests {
     #[tokio::test]
     async fn test_read_chunk_regular() {
         let temp_dir = TempDir::new().unwrap();
-        let path = temp_dir.path().join("test_chunk.gor");
+        let path = temp_dir.path().join("test_chunk.kub");
 
         // Create and seal a test chunk
         let mut chunk = Chunk::new_active(1, 100);
@@ -414,7 +414,7 @@ mod tests {
     #[tokio::test]
     async fn test_read_chunk_mmap() {
         let temp_dir = TempDir::new().unwrap();
-        let path = temp_dir.path().join("test_chunk.gor");
+        let path = temp_dir.path().join("test_chunk.kub");
 
         // Create and seal a test chunk
         let mut chunk = Chunk::new_active(1, 100);
@@ -446,7 +446,7 @@ mod tests {
     #[tokio::test]
     async fn test_time_range_filter() {
         let temp_dir = TempDir::new().unwrap();
-        let path = temp_dir.path().join("test_chunk.gor");
+        let path = temp_dir.path().join("test_chunk.kub");
 
         // Create chunk with timestamps 0-900
         let mut chunk = Chunk::new_active(1, 100);
@@ -480,7 +480,7 @@ mod tests {
     #[tokio::test]
     async fn test_limit_filter() {
         let temp_dir = TempDir::new().unwrap();
-        let path = temp_dir.path().join("test_chunk.gor");
+        let path = temp_dir.path().join("test_chunk.kub");
 
         // Create chunk with 100 points
         let mut chunk = Chunk::new_active(1, 200);
@@ -516,7 +516,7 @@ mod tests {
         // Create 3 chunks
         let mut paths = Vec::new();
         for chunk_id in 0..3 {
-            let path = temp_dir.path().join(format!("chunk_{}.gor", chunk_id));
+            let path = temp_dir.path().join(format!("chunk_{}.kub", chunk_id));
 
             let mut chunk = Chunk::new_active(1, 100);
             for i in 0..10 {
@@ -558,7 +558,7 @@ mod tests {
         // Create 3 chunks
         let mut paths = Vec::new();
         for chunk_id in 0..3 {
-            let path = temp_dir.path().join(format!("chunk_{}.gor", chunk_id));
+            let path = temp_dir.path().join(format!("chunk_{}.kub", chunk_id));
 
             let mut chunk = Chunk::new_active(1, 100);
             for i in 0..10 {

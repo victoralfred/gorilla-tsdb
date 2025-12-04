@@ -15,7 +15,7 @@
 //! # Example
 //!
 //! ```rust
-//! use gorilla_tsdb::query::operators::ParallelConfig;
+//! use kuba_tsdb::query::operators::ParallelConfig;
 //!
 //! // Use default configuration for parallel execution
 //! let config = ParallelConfig::default();

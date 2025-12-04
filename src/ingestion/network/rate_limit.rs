@@ -233,7 +233,7 @@ impl From<IpAddr> for IpKey {
 /// # Example
 ///
 /// ```rust
-/// use gorilla_tsdb::ingestion::network::{RateLimiter, RateLimitConfig};
+/// use kuba_tsdb::ingestion::network::{RateLimiter, RateLimitConfig};
 /// use std::net::IpAddr;
 ///
 /// let limiter = RateLimiter::new(RateLimitConfig::default());

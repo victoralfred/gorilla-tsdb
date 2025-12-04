@@ -19,11 +19,11 @@
 //! # Example
 //!
 //! ```no_run
-//! use gorilla_tsdb::storage::mmap::MmapChunk;
+//! use kuba_tsdb::storage::mmap::MmapChunk;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! // Open memory-mapped chunk
-//! let chunk = MmapChunk::open("/path/to/chunk.gor")?;
+//! let chunk = MmapChunk::open("/path/to/chunk.kub")?;
 //!
 //! // Zero-copy header access
 //! let header = chunk.header();
@@ -186,7 +186,7 @@ impl MmapChunk {
     ///
     /// # Arguments
     ///
-    /// * `path` - Path to sealed chunk file (.gor or .snappy)
+    /// * `path` - Path to sealed chunk file (.kub or .snappy)
     ///
     /// # Returns
     ///
@@ -214,10 +214,10 @@ impl MmapChunk {
     /// # Example
     ///
     /// ```no_run
-    /// use gorilla_tsdb::storage::mmap::MmapChunk;
+    /// use kuba_tsdb::storage::mmap::MmapChunk;
     ///
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let chunk = MmapChunk::open("/tmp/chunk.gor")?;
+    /// let chunk = MmapChunk::open("/tmp/chunk.kub")?;
     /// println!("Opened chunk with {} points", chunk.header().point_count);
     /// # Ok(())
     /// # }
@@ -470,17 +470,17 @@ impl MmapChunk {
     /// # Example
     ///
     /// ```no_run
-    /// use gorilla_tsdb::storage::mmap::MmapChunk;
+    /// use kuba_tsdb::storage::mmap::MmapChunk;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let chunk = MmapChunk::open("/tmp/chunk.gor")?;
+    /// let chunk = MmapChunk::open("/tmp/chunk.kub")?;
     /// let points = chunk.decompress().await?;
     /// println!("Decompressed {} points", points.len());
     /// # Ok(())
     /// # }
     /// ```
     pub async fn decompress(&self) -> Result<Vec<DataPoint>, String> {
-        use crate::compression::gorilla::GorillaCompressor;
+        use crate::compression::kuba::KubaCompressor;
         use crate::engine::traits::{CompressedBlock, Compressor};
         use bytes::Bytes;
 
@@ -489,7 +489,7 @@ impl MmapChunk {
 
         // Create CompressedBlock (must copy for Send to thread pool)
         let block = CompressedBlock {
-            algorithm_id: "gorilla".to_string(),
+            algorithm_id: "Kuba".to_string(),
             original_size: self.header.uncompressed_size as usize,
             compressed_size: self.header.compressed_size as usize,
             checksum: self.header.checksum,
@@ -503,7 +503,7 @@ impl MmapChunk {
         };
 
         // Decompress using the compressor (it handles spawn_blocking internally)
-        let compressor = GorillaCompressor::new();
+        let compressor = KubaCompressor::new();
         compressor
             .decompress(&block)
             .await
@@ -621,7 +621,7 @@ mod tests {
     /// Helper: Create a test chunk file
     async fn create_test_chunk(points: usize) -> (TempDir, PathBuf) {
         let temp_dir = TempDir::new().unwrap();
-        let path = temp_dir.path().join("test_chunk.gor");
+        let path = temp_dir.path().join("test_chunk.kub");
 
         let mut chunk = Chunk::new_active(1, points);
         for i in 0..points {
@@ -640,7 +640,7 @@ mod tests {
 
     #[test]
     fn test_open_nonexistent_file() {
-        let result = MmapChunk::open("/nonexistent/path/chunk.gor");
+        let result = MmapChunk::open("/nonexistent/path/chunk.kub");
         assert!(result.is_err());
     }
 

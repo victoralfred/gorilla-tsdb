@@ -277,7 +277,7 @@ impl WriteWorker {
                         "Persisted batch to storage"
                     );
 
-                    // Estimate compressed size based on typical Gorilla compression ratio
+                    // Estimate compressed size based on typical Kuba compression ratio
                     // (actual size tracked internally by storage engine)
                     let compressed_size = if self.config.compress {
                         (points.len() * 2) as u64 // ~1.37 bytes/point typical

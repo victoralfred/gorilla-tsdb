@@ -31,7 +31,7 @@
 //! # Example
 //!
 //! ```rust
-//! use gorilla_tsdb::ingestion::protocol::{ProtobufParser, ProtocolParser};
+//! use kuba_tsdb::ingestion::protocol::{ProtobufParser, ProtocolParser};
 //!
 //! let parser = ProtobufParser::new();
 //!

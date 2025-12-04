@@ -6,11 +6,11 @@
 //! silent failures or data corruption in production.
 //!
 //! Run with: cargo test --test critical_issues_tests
-use gorilla_tsdb::engine::traits::{BlockMetadata, CompressedBlock, Compressor};
-use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
-use gorilla_tsdb::storage::chunk::Chunk;
-use gorilla_tsdb::storage::writer::{ChunkWriter, ChunkWriterConfig};
-use gorilla_tsdb::types::DataPoint;
+use kuba_tsdb::engine::traits::{BlockMetadata, CompressedBlock, Compressor};
+use kuba_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
+use kuba_tsdb::storage::chunk::Chunk;
+use kuba_tsdb::storage::writer::{ChunkWriter, ChunkWriterConfig};
+use kuba_tsdb::types::DataPoint;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -79,7 +79,7 @@ async fn test_rc2_toctou_sealed_flag() {
     use tokio::time::sleep;
 
     let temp_dir = TempDir::new().unwrap();
-    let chunk_path = temp_dir.path().join("chunk_1_10.gor");
+    let chunk_path = temp_dir.path().join("chunk_1_10.kub");
 
     let seal_config = SealConfig {
         max_points: 10,
@@ -420,7 +420,7 @@ async fn test_se4_checksum_mismatch_detection() {
             .unwrap();
     }
 
-    let chunk_path = temp_dir.path().join("test_chunk.gor");
+    let chunk_path = temp_dir.path().join("test_chunk.kub");
     chunk.seal(chunk_path.clone()).await.unwrap();
 
     // Corrupt the file by modifying data
@@ -467,7 +467,7 @@ async fn test_se5_io_errors_have_context() {
 
     // Try to seal to directory that doesn't exist
     // Use a path that definitely doesn't exist and can't be created
-    let invalid_path = PathBuf::from("/nonexistent_root_dir/deep/path/chunk.gor");
+    let invalid_path = PathBuf::from("/nonexistent_root_dir/deep/path/chunk.kub");
     let result = chunk.seal(invalid_path.clone()).await;
 
     assert!(
@@ -528,13 +528,13 @@ fn test_ec1_timestamp_boundaries() {
 /// Validates that empty chunks are handled correctly in all operations.
 #[tokio::test]
 async fn test_ec2_empty_chunk_handling() {
-    use gorilla_tsdb::compression::gorilla::GorillaCompressor;
+    use kuba_tsdb::compression::kuba::KubaCompressor;
 
     let temp_dir = TempDir::new().unwrap();
     let mut chunk = Chunk::new_active(1, 100);
 
     // Seal empty chunk
-    let path = temp_dir.path().join("empty_chunk.gor");
+    let path = temp_dir.path().join("empty_chunk.kub");
     let result = chunk.seal(path.clone()).await;
 
     // Should handle gracefully (either succeed or fail with clear message)
@@ -547,9 +547,9 @@ async fn test_ec2_empty_chunk_handling() {
     }
 
     // Decompress empty block
-    let compressor = GorillaCompressor::new();
+    let compressor = KubaCompressor::new();
     let block = CompressedBlock {
-        algorithm_id: "gorilla".to_string(),
+        algorithm_id: "Kuba".to_string(),
         original_size: 0,
         compressed_size: 0,
         checksum: 0,
@@ -621,7 +621,7 @@ fn test_ec3_zero_duration_chunks() {
 /// Validates that TimeRange with extreme values doesn't overflow.
 #[test]
 fn test_ec4_time_range_overflow() {
-    use gorilla_tsdb::types::TimeRange;
+    use kuba_tsdb::types::TimeRange;
 
     // Test extreme range
     let result = TimeRange::new(i64::MIN + 1000, i64::MAX - 1000);

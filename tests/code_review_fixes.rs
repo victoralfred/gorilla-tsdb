@@ -5,12 +5,12 @@
 //! - Security validation
 //! - Compression edge cases
 //! - Concurrent operations
-use gorilla_tsdb::compression::gorilla::GorillaCompressor;
-use gorilla_tsdb::engine::traits::Compressor;
-use gorilla_tsdb::security::{validate_chunk_path, validate_series_id, validate_timestamp};
-use gorilla_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
-use gorilla_tsdb::storage::chunk::Chunk;
-use gorilla_tsdb::types::DataPoint;
+use kuba_tsdb::compression::kuba::KubaCompressor;
+use kuba_tsdb::engine::traits::Compressor;
+use kuba_tsdb::security::{validate_chunk_path, validate_series_id, validate_timestamp};
+use kuba_tsdb::storage::active_chunk::{ActiveChunk, SealConfig};
+use kuba_tsdb::storage::chunk::Chunk;
+use kuba_tsdb::types::DataPoint;
 use std::sync::Arc;
 use tokio::task::JoinSet;
 
@@ -24,7 +24,7 @@ use tokio::task::JoinSet;
 async fn test_seal_empty_chunk_returns_error() {
     let mut chunk = Chunk::new_active(1, 1000);
     let temp_dir = tempfile::TempDir::new().unwrap();
-    let path = temp_dir.path().join("test_empty.gor");
+    let path = temp_dir.path().join("test_empty.kub");
     let result = chunk.seal(path).await;
 
     assert!(result.is_err());
@@ -123,9 +123,9 @@ fn test_series_id_mismatch_rejected() {
 fn test_path_traversal_blocked() {
     let malicious_paths = vec![
         "/data/../etc/passwd",
-        "/data/gorilla-tsdb/../../../etc/shadow",
-        "../../sensitive.gor",
-        "/data/gorilla-tsdb/chunks/../../file.gor",
+        "/data/Kuba-tsdb/../../../etc/shadow",
+        "../../sensitive.kub",
+        "/data/Kuba-tsdb/chunks/../../file.kub",
     ];
 
     for path in malicious_paths {
@@ -137,7 +137,7 @@ fn test_path_traversal_blocked() {
 /// Test: Null byte injection prevention
 #[test]
 fn test_null_byte_blocked() {
-    let result = validate_chunk_path("/data/chunk\0.gor");
+    let result = validate_chunk_path("/data/chunk\0.kub");
     assert!(result.is_err());
 }
 
@@ -148,7 +148,7 @@ fn test_invalid_extension_blocked() {
         "/data/chunk.txt",
         "/data/chunk.sh",
         "/data/chunk",
-        "/data/chunk.gor.bak",
+        "/data/chunk.kub.bak",
     ];
 
     for path in invalid_extensions {
@@ -185,7 +185,7 @@ fn test_timestamp_boundaries() {
 /// Performance: PERF-005 - Bit operations
 #[tokio::test]
 async fn test_compression_roundtrip_edge_values() {
-    let compressor = GorillaCompressor::new();
+    let compressor = KubaCompressor::new();
 
     let edge_values = vec![
         DataPoint {
@@ -238,7 +238,7 @@ async fn test_compression_roundtrip_edge_values() {
 /// Test: Compression with large timestamp deltas
 #[tokio::test]
 async fn test_compression_large_timestamp_delta() {
-    let compressor = GorillaCompressor::new();
+    let compressor = KubaCompressor::new();
 
     let points = vec![
         DataPoint {
@@ -265,7 +265,7 @@ async fn test_compression_large_timestamp_delta() {
 /// Tests the fix for EDGE-002
 #[tokio::test]
 async fn test_compression_empty_points_error() {
-    let compressor = GorillaCompressor::new();
+    let compressor = KubaCompressor::new();
 
     let empty_points: Vec<DataPoint> = vec![];
     let result = compressor.compress(&empty_points).await;
@@ -334,7 +334,7 @@ async fn test_seal_after_concurrent_writes() {
 
     // Seal should work
     let temp_dir = tempfile::TempDir::new().unwrap();
-    let path = temp_dir.path().join("test_concurrent_seal.gor");
+    let path = temp_dir.path().join("test_concurrent_seal.kub");
     let result = chunk.seal(path).await;
     assert!(result.is_ok());
     assert!(chunk.is_sealed());
@@ -348,7 +348,7 @@ async fn test_seal_after_concurrent_writes() {
 /// Tests the fix for VULN-003
 #[tokio::test]
 async fn test_writer_seal_with_multiple_arc_references() {
-    use gorilla_tsdb::storage::writer::{ChunkWriter, ChunkWriterConfig};
+    use kuba_tsdb::storage::writer::{ChunkWriter, ChunkWriterConfig};
     use std::time::Duration;
 
     let temp_dir = tempfile::TempDir::new().unwrap();
@@ -403,7 +403,7 @@ async fn test_writer_seal_with_multiple_arc_references() {
 /// Tests the fix for EDGE-003
 #[test]
 fn test_metrics_gathering_returns_result() {
-    use gorilla_tsdb::metrics::{gather_metrics, init};
+    use kuba_tsdb::metrics::{gather_metrics, init};
 
     // Initialize metrics to ensure at least some metrics are registered
     // This is needed because lazy_static metrics may not be initialized

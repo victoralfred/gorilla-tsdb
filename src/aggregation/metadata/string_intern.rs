@@ -69,7 +69,7 @@ impl std::error::Error for InternError {}
 /// # Example
 ///
 /// ```rust
-/// use gorilla_tsdb::aggregation::metadata::StringInterner;
+/// use kuba_tsdb::aggregation::metadata::StringInterner;
 ///
 /// let interner = StringInterner::new();
 ///
@@ -361,7 +361,7 @@ impl Default for TagValueInterner {
 /// # Example
 ///
 /// ```rust
-/// use gorilla_tsdb::aggregation::metadata::TagDictionary;
+/// use kuba_tsdb::aggregation::metadata::TagDictionary;
 ///
 /// let dict = TagDictionary::new();
 ///

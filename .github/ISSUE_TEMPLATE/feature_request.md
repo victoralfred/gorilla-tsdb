@@ -1,6 +1,6 @@
 ---
 name: Feature Request
-about: Suggest an idea for Gorilla TSDB
+about: Suggest an idea for Kuba TSDB
 title: "[FEATURE] "
 labels: enhancement
 assignees: ''

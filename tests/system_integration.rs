@@ -1,7 +1,7 @@
 //! End-to-End System Integration Tests
 //!
 //! This module provides comprehensive integration tests that verify all
-//! components of the Gorilla TSDB work together correctly as a complete system.
+//! components of the Kuba TSDB work together correctly as a complete system.
 //!
 //! # Test Coverage
 //!
@@ -16,8 +16,8 @@
 //! 9. **Edge Cases** - Empty queries, boundary conditions
 //! 10. **Performance Validation** - Basic throughput verification
 
-use gorilla_tsdb::{
-    compression::gorilla::GorillaCompressor,
+use kuba_tsdb::{
+    compression::kuba::KubaCompressor,
     engine::{DatabaseConfig, InMemoryTimeIndex, TimeSeriesDB, TimeSeriesDBBuilder},
     storage::LocalDiskEngine,
     types::{DataPoint, SeriesId, TagFilter, TimeRange},
@@ -38,7 +38,7 @@ async fn create_test_db() -> (TimeSeriesDB, TempDir) {
         .expect("Failed to create storage engine");
 
     let index = InMemoryTimeIndex::new();
-    let compressor = GorillaCompressor::new();
+    let compressor = KubaCompressor::new();
 
     let config = DatabaseConfig {
         data_dir: temp_dir.path().to_path_buf(),
@@ -285,7 +285,7 @@ async fn test_compression_roundtrip() {
     assert_eq!(result.len(), points.len());
     for (original, queried) in points.iter().zip(result.iter()) {
         assert_eq!(original.timestamp, queried.timestamp);
-        // Gorilla compression preserves values exactly for IEEE 754 floats
+        // Kuba compression preserves values exactly for IEEE 754 floats
         assert!(
             (original.value - queried.value).abs() < 0.0001,
             "Value mismatch at ts {}: {} vs {}",
@@ -557,7 +557,7 @@ async fn test_series_deletion() {
 /// Test that different engine implementations work correctly
 #[tokio::test]
 async fn test_pluggable_engines() {
-    // Test with LocalDiskEngine + GorillaCompressor + InMemoryIndex
+    // Test with LocalDiskEngine + KubaCompressor + InMemoryIndex
     // This is the default configuration
 
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
@@ -566,7 +566,7 @@ async fn test_pluggable_engines() {
     let storage =
         LocalDiskEngine::new(temp_dir.path().to_path_buf()).expect("Failed to create storage");
     let index = InMemoryTimeIndex::new();
-    let compressor = GorillaCompressor::new();
+    let compressor = KubaCompressor::new();
 
     let config = DatabaseConfig {
         data_dir: temp_dir.path().to_path_buf(),

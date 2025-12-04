@@ -37,7 +37,7 @@
 //! # Example
 //!
 //! ```rust
-//! use gorilla_tsdb::ingestion::protocol::{ProtocolParser, LineProtocolParser, ParsedPoint};
+//! use kuba_tsdb::ingestion::protocol::{ProtocolParser, LineProtocolParser, ParsedPoint};
 //!
 //! // Parse InfluxDB line protocol
 //! let parser = LineProtocolParser::new();

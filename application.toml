@@ -1,17 +1,17 @@
 # ============================================================================
-# Gorilla TSDB - Application Configuration
+# Kuba TSDB - Application Configuration
 # ============================================================================
 #
-# This file contains all configurable settings for the Gorilla TSDB server.
+# This file contains all configurable settings for the Kuba TSDB server.
 # All values shown are defaults - uncomment and modify as needed.
 #
 # Configuration Priority (highest to lowest):
-#   1. Environment Variables (GORILLA_*)
+#   1. Environment Variables (Kuba_*)
 #   2. This configuration file
 #   3. Built-in defaults
 #
-# Environment variable override format: GORILLA_<SECTION>_<KEY>
-# Example: GORILLA_SERVER_LISTEN_ADDR, GORILLA_REDIS_URL
+# Environment variable override format: Kuba_<SECTION>_<KEY>
+# Example: Kuba_SERVER_LISTEN_ADDR, Kuba_REDIS_URL
 # ============================================================================
 
 # ----------------------------------------------------------------------------
