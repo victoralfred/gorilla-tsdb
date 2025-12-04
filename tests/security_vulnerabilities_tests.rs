@@ -5,11 +5,18 @@
 //! addressed and cannot be exploited.
 //!
 //! Run with: cargo test --test security_vulnerabilities_tests
+//!
+//! Note: Tests that modify TSDB_DATA_DIR environment variable use a mutex
+//! to prevent race conditions when tests run in parallel.
 use kuba_tsdb::compression::kuba::KubaCompressor;
 use kuba_tsdb::engine::traits::{BlockMetadata, CompressedBlock, Compressor};
 use kuba_tsdb::security;
 use kuba_tsdb::types::DataPoint;
+use std::sync::Mutex;
 use tempfile::TempDir;
+
+// Mutex to serialize tests that modify TSDB_DATA_DIR environment variable
+static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
 // ============================================================================
 // PATH TRAVERSAL TESTS (SV-1)
@@ -70,6 +77,9 @@ fn test_sv1_5_symlink_attack() {
     use std::fs;
     use std::os::unix::fs::symlink;
 
+    // Lock mutex to prevent race conditions with other tests modifying TSDB_DATA_DIR
+    let _guard = ENV_MUTEX.lock().unwrap();
+
     let temp_dir = TempDir::new().unwrap();
     let data_dir = temp_dir.path().join("data");
     fs::create_dir(&data_dir).unwrap();
@@ -104,14 +114,20 @@ fn test_sv1_5_symlink_attack() {
 /// SV-1.6: Test that valid paths are accepted
 #[test]
 fn test_sv1_6_valid_paths_accepted() {
-    let temp_dir = TempDir::new().unwrap();
-    std::env::set_var("TSDB_DATA_DIR", temp_dir.path().to_str().unwrap());
+    // Lock mutex to prevent race conditions with other tests modifying TSDB_DATA_DIR
+    let _guard = ENV_MUTEX.lock().unwrap();
 
-    // Create the directory structure for valid path tests
-    let series_dir = temp_dir.path().join("series_1");
+    let temp_dir = TempDir::new().unwrap();
+    let data_dir = temp_dir.path();
+
+    // Set TSDB_DATA_DIR to our temp directory
+    std::env::set_var("TSDB_DATA_DIR", data_dir.to_str().unwrap());
+
+    // Create the directory structure for valid path tests within the data dir
+    let series_dir = data_dir.join("series_1");
     std::fs::create_dir_all(&series_dir).unwrap();
 
-    // Valid path within temp directory
+    // Valid path within data directory
     let valid_path = series_dir.join("chunk_123.kub");
     let result = security::validate_chunk_path(&valid_path);
     assert!(result.is_ok(), "Should accept valid path: {:?}", result);
@@ -133,6 +149,9 @@ fn test_sv1_6_valid_paths_accepted() {
 /// SV-1.7: Test invalid file extensions are rejected
 #[test]
 fn test_sv1_7_invalid_extensions() {
+    // Lock mutex to prevent race conditions with other tests modifying TSDB_DATA_DIR
+    let _guard = ENV_MUTEX.lock().unwrap();
+
     let temp_dir = TempDir::new().unwrap();
     std::env::set_var("TSDB_DATA_DIR", temp_dir.path().to_str().unwrap());
 
