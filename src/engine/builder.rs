@@ -10,7 +10,7 @@ use super::traits::{
 use crate::error::{Error, Result};
 use crate::storage::active_chunk::{ActiveChunk, SealConfig};
 use crate::storage::parallel_sealing::{
-    ParallelSealingConfig, ParallelSealingService, SealResult, SealingStatsSnapshot,
+    ParallelSealingConfig, ParallelSealingService, SealingStatsSnapshot,
 };
 use crate::types::{ChunkId, DataPoint, SeriesId, TagFilter, TimeRange};
 use std::collections::HashMap;
@@ -159,6 +159,32 @@ impl TimeSeriesDBBuilder {
         self
     }
 
+    /// Set parallel sealing configuration
+    ///
+    /// Controls how chunks are compressed in parallel during flush operations.
+    /// Higher `max_concurrent_seals` enables more parallelism but uses more memory.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use kuba_tsdb::storage::ParallelSealingConfig;
+    ///
+    /// let sealing_config = ParallelSealingConfig {
+    ///     max_concurrent_seals: 8,
+    ///     memory_budget_bytes: 512 * 1024 * 1024, // 512MB
+    ///     ..Default::default()
+    /// };
+    /// let db = TimeSeriesDBBuilder::new()
+    ///     .with_sealing_config(sealing_config)
+    ///     // ... other configuration
+    ///     .build()
+    ///     .await?;
+    /// ```
+    pub fn with_sealing_config(mut self, sealing_config: ParallelSealingConfig) -> Self {
+        self.sealing_config = Some(sealing_config);
+        self
+    }
+
     /// Build the database with configured engines
     pub async fn build(self) -> Result<TimeSeriesDB> {
         // For now, we'll require all engines to be provided
@@ -187,6 +213,11 @@ impl TimeSeriesDBBuilder {
             .await
             .map_err(Error::Index)?;
 
+        // Create parallel sealing service
+        let sealing_service = Arc::new(ParallelSealingService::new(
+            self.sealing_config.unwrap_or_default(),
+        ));
+
         Ok(TimeSeriesDB {
             compressor,
             storage,
@@ -194,6 +225,7 @@ impl TimeSeriesDBBuilder {
             config: self.config,
             active_chunks: Arc::new(RwLock::new(HashMap::new())),
             buffer_config: self.buffer_config.unwrap_or_default(),
+            sealing_service,
         })
     }
 }
@@ -249,6 +281,8 @@ pub struct TimeSeriesDB {
     active_chunks: Arc<RwLock<HashMap<SeriesId, Arc<ActiveChunk>>>>,
     /// Buffer configuration
     buffer_config: BufferConfig,
+    /// Parallel sealing service for concurrent chunk compression
+    sealing_service: Arc<ParallelSealingService>,
 }
 
 impl TimeSeriesDB {
@@ -455,28 +489,102 @@ impl TimeSeriesDB {
         Ok(chunk_id)
     }
 
-    /// Flush all active chunks to storage
+    /// Flush all active chunks to storage using parallel compression
     ///
     /// Call this during graceful shutdown to ensure no data is lost.
+    /// Uses the parallel sealing service for concurrent compression of multiple chunks.
     pub async fn flush_all(&self) -> Result<Vec<ChunkId>> {
-        let series_ids: Vec<SeriesId> = {
-            let chunks = self.active_chunks.read().await;
-            chunks.keys().cloned().collect()
+        // Collect all chunks to seal
+        let chunks_to_seal: Vec<_> = {
+            let mut chunks = self.active_chunks.write().await;
+            let mut to_seal = Vec::new();
+
+            for (series_id, active_chunk) in chunks.drain() {
+                if let Ok(points) = active_chunk.take_points() {
+                    if !points.is_empty() {
+                        let path = self.chunk_path(series_id);
+                        to_seal.push((series_id, points, path));
+                    }
+                }
+            }
+            to_seal
         };
 
-        let mut chunk_ids = Vec::new();
-        for series_id in series_ids {
-            match self.seal_active_chunk(series_id).await {
-                Ok(chunk_id) => chunk_ids.push(chunk_id),
-                Err(e) => warn!(series_id = series_id, error = %e, "Failed to flush series"),
-            }
+        if chunks_to_seal.is_empty() {
+            return Ok(Vec::new());
         }
 
         info!(
-            chunks_flushed = chunk_ids.len(),
-            "Flushed all active chunks"
+            chunks = chunks_to_seal.len(),
+            "Flushing all chunks in parallel"
         );
+
+        // Seal all in parallel using the sealing service
+        let results = self.sealing_service.seal_all_and_wait(chunks_to_seal).await;
+
+        // Process results and register with index
+        let mut chunk_ids = Vec::new();
+        for result in results {
+            match result {
+                Ok(seal_result) => {
+                    // Register with index
+                    let time_range = TimeRange::new_unchecked(
+                        seal_result.start_timestamp,
+                        seal_result.end_timestamp,
+                    );
+
+                    let location = ChunkLocation {
+                        engine_id: "local-disk-v1".to_string(),
+                        path: seal_result.path.to_string_lossy().to_string(),
+                        offset: None,
+                        size: Some(seal_result.compressed_size),
+                    };
+
+                    if let Err(e) = self
+                        .index
+                        .add_chunk(
+                            seal_result.series_id,
+                            seal_result.chunk_id.clone(),
+                            time_range,
+                            location,
+                        )
+                        .await
+                    {
+                        warn!(
+                            series_id = seal_result.series_id,
+                            error = %e,
+                            "Failed to register sealed chunk with index"
+                        );
+                    } else {
+                        chunk_ids.push(seal_result.chunk_id);
+                    }
+                }
+                Err(e) => {
+                    warn!(error = %e, "Failed to seal chunk during parallel flush");
+                }
+            }
+        }
+
+        info!(chunks_flushed = chunk_ids.len(), "Parallel flush complete");
+
         Ok(chunk_ids)
+    }
+
+    /// Generate the file path for a chunk
+    fn chunk_path(&self, series_id: SeriesId) -> PathBuf {
+        let timestamp = chrono::Utc::now().timestamp_millis();
+        self.config
+            .data_dir
+            .join(format!("series_{}", series_id))
+            .join(format!("chunk_{}.kub", timestamp))
+    }
+
+    /// Get parallel sealing statistics
+    ///
+    /// Returns statistics about the parallel sealing service including
+    /// active seals, total sealed chunks, and compression ratios.
+    pub fn sealing_stats(&self) -> SealingStatsSnapshot {
+        self.sealing_service.stats()
     }
 
     /// Query data points from the database
