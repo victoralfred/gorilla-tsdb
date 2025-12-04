@@ -35,8 +35,9 @@ pub use ans::{
 };
 pub use kuba::KubaCompressor;
 pub use metrics::{
-    global_metrics, CodecMetrics, CodecType, CompressionMetrics, CompressionMetricsSnapshot,
-    CompressionTimer,
+    global_metrics, global_sealing_metrics, CodecMetrics, CodecType, CompressionMetrics,
+    CompressionMetricsSnapshot, CompressionTimer, Histogram, HistogramSnapshot, SealingMetrics,
+    SealingMetricsSnapshot, COMPRESSION_RATIO_BUCKETS, SEAL_DURATION_BUCKETS,
 };
 pub use parallel::{ParallelCompressionResult, ParallelCompressor, ParallelConfig};
 pub use simd::{
