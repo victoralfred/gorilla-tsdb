@@ -14,7 +14,7 @@ use super::config::ServerConfig;
 use super::query_router;
 use super::types::*;
 use axum::{
-    extract::{Query, State},
+    extract::{ConnectInfo, Query, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
@@ -26,9 +26,11 @@ use gorilla_tsdb::ingestion::schema::sanitize_tags_for_redis;
 use gorilla_tsdb::query::ast::{Query as AstQuery, SelectQuery, SeriesSelector};
 use gorilla_tsdb::query::result::QueryResult;
 use gorilla_tsdb::query::subscription::SubscriptionManager;
+use gorilla_tsdb::security::{check_per_client_rate_limit, get_rate_limit_info};
 use gorilla_tsdb::storage::LocalDiskEngine;
 use gorilla_tsdb::types::{generate_series_id, DataPoint, SeriesId, TagFilter, TimeRange};
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tracing::{debug, error, warn};
@@ -54,6 +56,47 @@ pub struct AppState {
     /// Optional Pub/Sub publisher for cross-node cache invalidation
     /// Present when Redis is enabled and Pub/Sub setup succeeds
     pub invalidation_publisher: Option<InvalidationPublisher>,
+}
+
+// =============================================================================
+// Rate Limiting Helper
+// =============================================================================
+
+/// SEC-003: Helper to create rate limit exceeded response with proper headers
+///
+/// Returns a 429 Too Many Requests response with:
+/// - X-RateLimit-Remaining header showing 0 requests remaining
+/// - X-RateLimit-Reset header showing ms until rate limit resets
+/// - Retry-After header for RFC compliance
+fn rate_limit_response(
+    client_id: &str,
+) -> (
+    StatusCode,
+    [(axum::http::HeaderName, String); 3],
+    Json<serde_json::Value>,
+) {
+    let (remaining, reset_ms) = get_rate_limit_info(client_id).unwrap_or((0, 1000));
+    let reset_secs = (reset_ms / 1000).max(1);
+
+    (
+        StatusCode::TOO_MANY_REQUESTS,
+        [
+            (
+                axum::http::header::HeaderName::from_static("x-ratelimit-remaining"),
+                remaining.to_string(),
+            ),
+            (
+                axum::http::header::HeaderName::from_static("x-ratelimit-reset"),
+                reset_ms.to_string(),
+            ),
+            (axum::http::header::RETRY_AFTER, reset_secs.to_string()),
+        ],
+        Json(serde_json::json!({
+            "error": "Rate limit exceeded",
+            "retry_after_ms": reset_ms,
+            "message": "Too many requests. Please slow down."
+        })),
+    )
 }
 
 // =============================================================================
@@ -231,10 +274,21 @@ pub async fn metrics(State(state): State<Arc<AppState>>) -> impl IntoResponse {
 // =============================================================================
 
 /// Write data points
+///
+/// SEC-003: Per-client rate limiting is applied based on the client's IP address.
+/// Returns 429 Too Many Requests if the client exceeds their rate limit.
 pub async fn write_points(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<Arc<AppState>>,
     Json(req): Json<WriteRequest>,
 ) -> impl IntoResponse {
+    // SEC-003: Apply per-client rate limiting
+    let client_id = addr.ip().to_string();
+    if !check_per_client_rate_limit(&client_id) {
+        warn!(client = %client_id, "Rate limit exceeded for write request");
+        return rate_limit_response(&client_id).into_response();
+    }
+
     if req.points.is_empty() {
         return (
             StatusCode::BAD_REQUEST,
@@ -245,7 +299,8 @@ pub async fn write_points(
                 chunk_id: None,
                 error: Some("No points provided".to_string()),
             }),
-        );
+        )
+            .into_response();
     }
 
     if req.points.len() > state.config.max_write_points {
@@ -262,7 +317,8 @@ pub async fn write_points(
                     state.config.max_write_points
                 )),
             }),
-        );
+        )
+            .into_response();
     }
 
     // Sanitize tags to prevent Redis key injection attacks.
@@ -315,7 +371,8 @@ pub async fn write_points(
                                 "Must provide either 'series_id' or 'metric' name".to_string(),
                             ),
                         }),
-                    );
+                    )
+                        .into_response();
                 }
             }
         }
@@ -364,6 +421,7 @@ pub async fn write_points(
                     error: None,
                 }),
             )
+                .into_response()
         }
         Err(e) => {
             error!(error = %e, series_id = series_id, "Write failed");
@@ -377,6 +435,7 @@ pub async fn write_points(
                     error: Some(e.to_string()),
                 }),
             )
+                .into_response()
         }
     }
 }
