@@ -63,6 +63,8 @@ pub mod parallel_sealing;
 pub mod priority_sealing;
 /// High-level chunk reader with query capabilities
 pub mod reader;
+/// Tiered storage for automatic data migration
+pub mod tiered;
 /// Write-ahead logging for crash recovery
 pub mod wal;
 /// High-level chunk writer with batching and auto-rotation
@@ -99,6 +101,12 @@ pub use priority_sealing::{
     PrioritySealTask, QueueFullError, SealPriority,
 };
 pub use reader::{ChunkReader, QueryOptions};
+pub use tiered::{
+    CacheStats, ChunkTierInfo, ColdTierCache, LocalSimulatedStorage, MigrationCycleResult,
+    MigrationHandle, RemoteBackend, RemoteStorage, RemoteStorageConfig, StorageTier, TierConfig,
+    TierManager, TierManagerStatsSnapshot, TierMigrator, TierMigratorStatsSnapshot, TierPolicy,
+    TieredStorageError,
+};
 pub use wal::{
     EntryType, SyncMode, WalConfig, WalEntry, WalError, WalReader, WalRecovery, WalSegment,
     WalStatsSnapshot, WalWriter,
