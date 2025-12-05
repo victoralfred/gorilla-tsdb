@@ -63,6 +63,8 @@ pub mod parallel_sealing;
 pub mod priority_sealing;
 /// High-level chunk reader with query capabilities
 pub mod reader;
+/// Write-ahead logging for crash recovery
+pub mod wal;
 /// High-level chunk writer with batching and auto-rotation
 pub mod writer;
 
@@ -97,6 +99,10 @@ pub use priority_sealing::{
     PrioritySealTask, QueueFullError, SealPriority,
 };
 pub use reader::{ChunkReader, QueryOptions};
+pub use wal::{
+    EntryType, SyncMode, WalConfig, WalEntry, WalError, WalReader, WalRecovery, WalSegment,
+    WalStatsSnapshot, WalWriter,
+};
 pub use writer::{ChunkWriter, ChunkWriterConfig, WriteStats};
 
 /// Security utilities for path validation
