@@ -240,9 +240,15 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install cargo-vet
-        run: cargo install cargo-vet --locked
+        run: cargo install cargo-vet --locked --force
 
       - name: Check supply chain
+        shell: bash
+        env:
+          CARGO_TERM_COLOR: always
+          RUSTFLAGS: -D warnings -D unsafe_code
+          RUST_BACKTRACE: 1
+          CARGO_INCREMENTAL: 0
         run: |
           if [ -f "supply-chain/config.toml" ]; then
             cargo vet --locked
