@@ -1,5 +1,6 @@
 # supply-chain/config.toml
 # cargo-vet configuration for supply chain security
+# Documentation: https://mozilla.github.io/cargo-vet/
 
 [cargo-vet]
 version = "0.10.1"
@@ -8,7 +9,10 @@ version = "0.10.1"
 [imports.mozilla]
 url = "https://raw.githubusercontent.com/AmbientRun/safe-deps/main/audits.toml"
 
-[imports.bytecodealliance]
+[imports.bytecode-alliance]
+url = "https://raw.githubusercontent.com/AmbientRun/safe-deps/main/audits.toml"
+
+[imports.embark]
 url = "https://raw.githubusercontent.com/AmbientRun/safe-deps/main/audits.toml"
 
 [imports.google]
@@ -17,18 +21,16 @@ url = "https://raw.githubusercontent.com/AmbientRun/safe-deps/main/audits.toml"
 [imports.isrg]
 url = "https://raw.githubusercontent.com/AmbientRun/safe-deps/main/audits.toml"
 
-# Default policy - applies to all first-party crates
-[policy.kuba-tsdb]
-criteria = "safe-to-deploy"
+[imports.zcash]
+url = "https://raw.githubusercontent.com/AmbientRun/safe-deps/main/audits.toml"
 
-# Exemptions for crates pending audit
-# Add crates here that you've reviewed but haven't formally audited
-[[exemptions.tokio]]
-version = "1.48.0"
-criteria = "safe-to-deploy"
-notes = "Widely used async runtime, mass adoption provides implicit review"
+# Policy configuration
+[policy]
+# Define criteria for what "safe" means
+criteria = ["safe-to-deploy", "safe-to-run"]
 
-[[exemptions.bytes]]
-version = "1.11.0"
-criteria = "safe-to-deploy"
-notes = "Core bytes crate from tokio team"
+# Audit exemptions (use sparingly and document why)
+# [[exemptions.some-crate]]
+# version = "1.0.0"
+# criteria = "safe-to-deploy"
+# notes = "Reason for exemption"
