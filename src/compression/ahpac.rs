@@ -21,7 +21,9 @@
 //! let decompressed = compressor.decompress(&compressed).await?;
 //! ```
 
-use crate::ahpac::{AhpacCompressor as InnerCompressor, AhpacError, SelectionStrategy};
+use crate::ahpac::{
+    AhpacCompressor as InnerCompressor, AhpacError, NeuralPredictor, SelectionStrategy,
+};
 use crate::engine::traits::{BlockMetadata, CompressedBlock, CompressionStats, Compressor};
 use crate::error::CompressionError;
 use crate::types::DataPoint;
@@ -119,6 +121,50 @@ impl AhpacCompressor {
     /// Uses exhaustive search to find the smallest output.
     pub fn best_ratio() -> Self {
         Self::with_strategy(SelectionStrategy::Exhaustive)
+    }
+
+    /// Create an AHPAC compressor with a shared neural predictor
+    ///
+    /// This allows multiple compressors to share learning from the same neural
+    /// predictor, enabling consistent adaptive behavior across the application.
+    /// The predictor learns from actual compression results and adapts to
+    /// workload patterns over time.
+    ///
+    /// # Arguments
+    ///
+    /// * `predictor` - Shared neural predictor for adaptive learning
+    /// * `strategy` - Codec selection strategy to use
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use std::sync::Arc;
+    /// use kuba_tsdb::ahpac::NeuralPredictor;
+    /// use kuba_tsdb::compression::AhpacCompressor;
+    /// use kuba_tsdb::ahpac::SelectionStrategy;
+    ///
+    /// let predictor = Arc::new(NeuralPredictor::new());
+    /// let compressor = AhpacCompressor::with_shared_predictor(
+    ///     predictor,
+    ///     SelectionStrategy::Neural,
+    /// );
+    /// ```
+    pub fn with_shared_predictor(
+        predictor: Arc<NeuralPredictor>,
+        strategy: SelectionStrategy,
+    ) -> Self {
+        Self {
+            inner: InnerCompressor::with_shared_predictor(predictor, strategy),
+            stats: Arc::new(AhpacStats::new()),
+        }
+    }
+
+    /// Get access to the underlying neural predictor
+    ///
+    /// Returns a reference to the inner compressor's neural predictor for
+    /// checking learning statistics.
+    pub fn neural_predictor(&self) -> &NeuralPredictor {
+        self.inner.neural_predictor()
     }
 }
 
