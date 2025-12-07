@@ -99,6 +99,33 @@ impl ChunkReader {
         }
     }
 
+    /// Create a new chunk reader with a shared AHPAC compressor
+    ///
+    /// This allows the reader to use a shared neural predictor for adaptive
+    /// compression. While decompression doesn't train the neural predictor,
+    /// sharing the compressor ensures consistent behavior across the application.
+    ///
+    /// # Arguments
+    ///
+    /// * `ahpac_compressor` - Shared AHPAC compressor instance
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use std::sync::Arc;
+    /// use kuba_tsdb::compression::AhpacCompressor;
+    /// use kuba_tsdb::storage::reader::ChunkReader;
+    ///
+    /// let compressor = Arc::new(AhpacCompressor::new());
+    /// let reader = ChunkReader::with_compressor(compressor);
+    /// ```
+    pub fn with_compressor(ahpac_compressor: Arc<AhpacCompressor>) -> Self {
+        Self {
+            ahpac_compressor,
+            kuba_compressor: Arc::new(KubaCompressor::new()),
+        }
+    }
+
     /// Read a single chunk from disk with optional filtering
     ///
     /// This method loads a chunk from disk and optionally filters the results

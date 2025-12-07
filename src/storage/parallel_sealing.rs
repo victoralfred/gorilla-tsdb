@@ -604,6 +604,86 @@ impl ParallelSealingService {
         }
     }
 
+    /// Create a new parallel sealing service with a shared compressor
+    ///
+    /// This allows sharing a neural predictor across the application for
+    /// consistent adaptive compression behavior.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Service configuration
+    /// * `compressor` - Shared AHPAC compressor instance
+    pub fn with_compressor(
+        config: ParallelSealingConfig,
+        compressor: Arc<AhpacCompressor>,
+    ) -> Self {
+        info!(
+            max_concurrent = config.max_concurrent_seals,
+            memory_budget_mb = config.memory_budget_bytes / (1024 * 1024),
+            priority_enabled = config.enable_priority,
+            adaptive_concurrency_enabled = config.enable_adaptive_concurrency,
+            algorithm_selection_enabled = config.enable_algorithm_selection,
+            "Creating parallel sealing service with shared compressor"
+        );
+
+        // Create priority calculator if priority-based sealing is enabled
+        let priority_calculator = if config.enable_priority {
+            let priority_config = config.priority_config.clone().unwrap_or_default();
+            Some(Arc::new(PriorityCalculator::new(priority_config)))
+        } else {
+            None
+        };
+
+        // Create adaptive concurrency controller if enabled
+        let (concurrency_controller, adjustment_task_running) =
+            if config.enable_adaptive_concurrency {
+                let adaptive_config =
+                    config
+                        .adaptive_config
+                        .clone()
+                        .unwrap_or_else(|| AdaptiveConfig {
+                            max_concurrency: config.max_concurrent_seals,
+                            initial_concurrency: config.max_concurrent_seals,
+                            ..Default::default()
+                        });
+                let controller = Arc::new(ConcurrencyController::new(adaptive_config));
+                let running = Arc::new(AtomicBool::new(true));
+
+                controller.sampler().start();
+
+                let controller_clone = Arc::clone(&controller);
+                let running_clone = Arc::clone(&running);
+                tokio::spawn(async move {
+                    Self::run_adjustment_loop(controller_clone, running_clone).await;
+                });
+
+                (Some(controller), running)
+            } else {
+                (None, Arc::new(AtomicBool::new(false)))
+            };
+
+        // Create algorithm selector if enabled
+        let algorithm_selector = if config.enable_algorithm_selection {
+            let selection_config = config.selection_config.clone().unwrap_or_default();
+            Some(Arc::new(AlgorithmSelector::new(selection_config)))
+        } else {
+            None
+        };
+
+        Self {
+            semaphore: Arc::new(Semaphore::new(config.max_concurrent_seals)),
+            next_task_id: AtomicU64::new(0),
+            pending_memory: Arc::new(AtomicUsize::new(0)),
+            stats: Arc::new(SealingStats::default()),
+            compressor,
+            priority_calculator,
+            concurrency_controller,
+            adjustment_task_running,
+            algorithm_selector,
+            config,
+        }
+    }
+
     /// Background task that periodically adjusts concurrency based on load
     async fn run_adjustment_loop(controller: Arc<ConcurrencyController>, running: Arc<AtomicBool>) {
         let interval = controller.config().adjustment_interval;

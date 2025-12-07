@@ -59,12 +59,13 @@
 //! }
 //! ```
 
+use crate::compression::AhpacCompressor;
 use crate::storage::chunk::{ChunkMetadata, CompressionType};
 use crate::types::{ChunkId, DataPoint, SeriesId};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 // ============================================================================
@@ -543,6 +544,9 @@ pub struct ChunkCoalescer {
 
     /// Series currently being coalesced (to prevent concurrent coalescing)
     in_progress: RwLock<HashMap<SeriesId, Instant>>,
+
+    /// Shared compressor instance (optional, uses default if not provided)
+    compressor: Option<Arc<AhpacCompressor>>,
 }
 
 impl ChunkCoalescer {
@@ -564,6 +568,25 @@ impl ChunkCoalescer {
             config,
             stats: CoalescingStats::new(),
             in_progress: RwLock::new(HashMap::new()),
+            compressor: None,
+        }
+    }
+
+    /// Create a new chunk coalescer with a shared compressor
+    ///
+    /// This allows sharing a neural predictor across the application for
+    /// consistent adaptive compression behavior.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Configuration for coalescing behavior
+    /// * `compressor` - Shared AHPAC compressor instance
+    pub fn with_compressor(config: CoalescingConfig, compressor: Arc<AhpacCompressor>) -> Self {
+        Self {
+            config,
+            stats: CoalescingStats::new(),
+            in_progress: RwLock::new(HashMap::new()),
+            compressor: Some(compressor),
         }
     }
 
@@ -953,8 +976,15 @@ impl ChunkCoalescer {
         let start_timestamp = merged_points.first().unwrap().timestamp;
         let end_timestamp = merged_points.last().unwrap().timestamp;
 
-        // Compress merged points
-        let compressor = AhpacCompressor::new();
+        // Compress merged points using shared compressor if available
+        let default_compressor;
+        let compressor: &AhpacCompressor = match &self.compressor {
+            Some(c) => c.as_ref(),
+            None => {
+                default_compressor = AhpacCompressor::new();
+                &default_compressor
+            },
+        };
         let compressed = compressor
             .compress(&merged_points)
             .await
