@@ -16,7 +16,7 @@
 # ----------------------------------------------------------------------------
 [server]
 # Network binding address
-listen_addr = "0.0.0.0:8090"
+listen_addr = "0.0.0.0:7990"
 
 # Log level: trace, debug, info, warn, error
 log_level = "info"

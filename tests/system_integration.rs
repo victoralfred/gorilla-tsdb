@@ -46,6 +46,7 @@ async fn create_test_db() -> (TimeSeriesDB, TempDir) {
         max_chunk_size: 1024 * 1024,
         retention_days: None,
         custom_options: HashMap::new(),
+        ..Default::default()
     };
 
     let db = TimeSeriesDBBuilder::new()
@@ -574,6 +575,7 @@ async fn test_pluggable_engines() {
         max_chunk_size: 1024 * 1024,
         retention_days: Some(30),
         custom_options: HashMap::new(),
+        ..Default::default()
     };
 
     let db = TimeSeriesDBBuilder::new()

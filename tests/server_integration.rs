@@ -747,6 +747,7 @@ async fn create_test_server() -> (Router, TempDir) {
         max_chunk_size: 1024 * 1024,
         retention_days: None,
         custom_options: HashMap::new(),
+        ..Default::default()
     };
 
     let storage_dyn: Arc<dyn kuba_tsdb::engine::traits::StorageEngine + Send + Sync> =
