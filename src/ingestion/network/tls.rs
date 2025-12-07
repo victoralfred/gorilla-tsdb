@@ -2,12 +2,15 @@
 //!
 //! Provides TLS support using rustls for secure connections.
 //! Supports both server-side TLS and mutual TLS (mTLS) for client authentication.
+//!
+//! Uses rustls-pki-types PemObject trait for PEM parsing (replacing deprecated rustls-pemfile).
 
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::server::danger::ClientCertVerifier;
 use rustls::server::WebPkiClientVerifier;
@@ -165,6 +168,8 @@ impl TlsConfig {
     }
 
     /// Load certificate chain from PEM file
+    ///
+    /// Uses rustls-pki-types PemObject trait for PEM parsing
     fn load_certs(&self) -> Result<Vec<CertificateDer<'static>>, NetworkError> {
         let cert_file = File::open(&self.cert_path).map_err(|e| {
             NetworkError::Certificate(format!(
@@ -175,7 +180,9 @@ impl TlsConfig {
         })?;
 
         let mut reader = BufReader::new(cert_file);
-        let certs: Vec<CertificateDer<'static>> = rustls_pemfile::certs(&mut reader)
+
+        // Use PemObject trait from rustls-pki-types (replaces rustls-pemfile)
+        let certs: Vec<CertificateDer<'static>> = CertificateDer::pem_reader_iter(&mut reader)
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| {
                 NetworkError::Certificate(format!("Failed to parse certificates: {}", e))
@@ -191,6 +198,8 @@ impl TlsConfig {
     }
 
     /// Load private key from PEM file
+    ///
+    /// Uses rustls-pki-types PemObject trait for PEM parsing
     fn load_private_key(&self) -> Result<PrivateKeyDer<'static>, NetworkError> {
         let key_file = File::open(&self.key_path).map_err(|e| {
             NetworkError::PrivateKey(format!(
@@ -202,10 +211,10 @@ impl TlsConfig {
 
         let mut reader = BufReader::new(key_file);
 
-        // Try to read any private key format (RSA, PKCS8, EC)
-        let key = rustls_pemfile::private_key(&mut reader)
-            .map_err(|e| NetworkError::PrivateKey(format!("Failed to parse private key: {}", e)))?
-            .ok_or_else(|| NetworkError::PrivateKey("No private key found in file".to_string()))?;
+        // Use PemObject trait from rustls-pki-types (replaces rustls-pemfile)
+        // pem_reader reads the first private key found (RSA, PKCS8, EC)
+        let key = PrivateKeyDer::from_pem_reader(&mut reader)
+            .map_err(|e| NetworkError::PrivateKey(format!("Failed to parse private key: {}", e)))?;
 
         Ok(key)
     }
@@ -224,7 +233,9 @@ impl TlsConfig {
         })?;
 
         let mut reader = BufReader::new(ca_file);
-        let ca_certs: Vec<CertificateDer<'static>> = rustls_pemfile::certs(&mut reader)
+
+        // Use PemObject trait from rustls-pki-types (replaces rustls-pemfile)
+        let ca_certs: Vec<CertificateDer<'static>> = CertificateDer::pem_reader_iter(&mut reader)
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| {
                 NetworkError::Certificate(format!("Failed to parse CA certificates: {}", e))

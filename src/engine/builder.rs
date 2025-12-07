@@ -615,9 +615,10 @@ impl TimeSeriesDB {
             "Sealing active chunk"
         );
 
-        // Compress the data
+        // Compress the data using the shared AHPAC compressor
+        // This ensures we use the neural predictor for adaptive ML-based codec selection
         let compressed = self
-            .compressor
+            .ahpac_compressor
             .compress(&points)
             .await
             .map_err(Error::Compression)?;
@@ -883,9 +884,9 @@ impl TimeSeriesDB {
                 .await
                 .map_err(Error::Storage)?;
 
-            // Decompress
+            // Decompress using shared AHPAC compressor for consistency
             let points = self
-                .compressor
+                .ahpac_compressor
                 .decompress(&compressed)
                 .await
                 .map_err(Error::Compression)?;
@@ -999,8 +1000,9 @@ impl TimeSeriesDB {
                 .await
                 .map_err(Error::Storage)?;
 
+            // Decompress using shared AHPAC compressor for consistency
             let mut points = self
-                .compressor
+                .ahpac_compressor
                 .decompress(&compressed)
                 .await
                 .map_err(Error::Compression)?;

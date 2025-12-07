@@ -330,16 +330,24 @@ impl NeuralPredictor {
     }
 
     /// Convert output index to codec
+    ///
+    /// Note: DeltaZstd (index 4) is mapped to DeltaLz4 as a fallback since
+    /// DeltaZstd is not currently registered in the codec selector.
+    /// The neural network still has 5 outputs for future extensibility.
     pub fn index_to_codec(idx: usize) -> CodecId {
         match idx {
             0 => CodecId::Kuba,
             1 => CodecId::Chimp,
             2 => CodecId::Alp,
             3 => CodecId::DeltaLz4,
-            4 => CodecId::DeltaZstd,
-            _ => CodecId::Chimp, // Default fallback
+            4 => CodecId::DeltaLz4, // DeltaZstd not available, fallback to DeltaLz4
+            _ => CodecId::Chimp,    // Default fallback
         }
     }
+
+    /// Number of currently available codecs in the selector
+    /// Used for random exploration to avoid selecting unavailable codecs
+    const AVAILABLE_CODECS: u64 = 4;
 
     /// Check if we should explore (simple PRNG)
     fn should_explore(&self) -> bool {
@@ -348,9 +356,10 @@ impl NeuralPredictor {
     }
 
     /// Select a random codec for exploration
+    /// Only selects from the 4 available codecs (Kuba, Chimp, Alp, DeltaLz4)
     fn random_codec(&self) -> CodecId {
         let random = self.next_random();
-        Self::index_to_codec((random % OUTPUT_SIZE as u64) as usize)
+        Self::index_to_codec((random % Self::AVAILABLE_CODECS) as usize)
     }
 
     /// Simple xorshift PRNG for exploration
@@ -803,6 +812,7 @@ mod tests {
         assert_eq!(NeuralPredictor::index_to_codec(1), CodecId::Chimp);
         assert_eq!(NeuralPredictor::index_to_codec(2), CodecId::Alp);
         assert_eq!(NeuralPredictor::index_to_codec(3), CodecId::DeltaLz4);
-        assert_eq!(NeuralPredictor::index_to_codec(4), CodecId::DeltaZstd);
+        // Index 4 (DeltaZstd) falls back to DeltaLz4 since DeltaZstd is not available
+        assert_eq!(NeuralPredictor::index_to_codec(4), CodecId::DeltaLz4);
     }
 }

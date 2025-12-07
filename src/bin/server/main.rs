@@ -221,6 +221,7 @@ async fn init_database(
         );
     }
 
+    // Create AHPAC compressor with Neural strategy for adaptive ML-based codec selection
     let compressor = AhpacCompressor::new();
 
     let redis_url = if app_config.redis.enabled {
@@ -229,13 +230,15 @@ async fn init_database(
         None
     };
 
+    // Use Neural compression strategy for online adaptive learning
+    // This enables the ML-based codec selection that learns from compression feedback
     let db_config = DatabaseConfig {
         data_dir: config.data_dir.clone(),
         redis_url: redis_url.clone(),
         max_chunk_size: config.max_chunk_size,
         retention_days: config.retention_days,
         custom_options: HashMap::new(),
-        ..Default::default()
+        compression_strategy: kuba_tsdb::ahpac::SelectionStrategy::Neural,
     };
 
     let storage_dyn: Arc<dyn kuba_tsdb::engine::traits::StorageEngine + Send + Sync> =

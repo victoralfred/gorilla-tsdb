@@ -91,7 +91,7 @@ regex = "1.10"
 # TLS
 tokio-rustls = "0.26"
 rustls = "0.23"
-rustls-pemfile = "2"
+rustls-pki-types = { version = "1.9", features = ["std"] }
 
 # Network utilities
 socket2 = { version = "0.6.0", features = ["all"] }
