@@ -112,7 +112,7 @@ pub async fn health() -> Json<HealthResponse> {
     })
 }
 
-/// Get database statistics including query cache metrics
+/// Get database statistics including query cache metrics and neural predictor stats
 pub async fn get_stats(State(state): State<Arc<AppState>>) -> Json<StatsResponse> {
     let db_stats = state.db.stats();
     let cache_stats = state.query_cache.stats();
@@ -132,6 +132,30 @@ pub async fn get_stats(State(state): State<Arc<AppState>>) -> Json<StatsResponse
         (query_cache_hits as f64 / total_query_ops as f64) * 100.0
     } else {
         0.0
+    };
+
+    // Get neural predictor stats for ML/adaptive compression
+    let neural_stats = state.db.neural_predictor().stats();
+    let neural_predictor = NeuralPredictorStatsResponse {
+        sample_count: neural_stats.sample_count,
+        learning_rate: neural_stats.learning_rate,
+        is_warmed_up: neural_stats.sample_count >= 50,
+        strategy: format!("{:?}", state.db.compression_strategy()),
+        best_codec: format!("{:?}", neural_stats.best_performing_codec()),
+        codec_usage: CodecUsageStats {
+            kuba: neural_stats.codec_counts[0],
+            chimp: neural_stats.codec_counts[1],
+            alp: neural_stats.codec_counts[2],
+            delta_lz4: neural_stats.codec_counts[3],
+            delta_zstd: neural_stats.codec_counts[4],
+        },
+        codec_ratios: CodecRatioStats {
+            kuba: neural_stats.avg_ratios[0],
+            chimp: neural_stats.avg_ratios[1],
+            alp: neural_stats.avg_ratios[2],
+            delta_lz4: neural_stats.avg_ratios[3],
+            delta_zstd: neural_stats.avg_ratios[4],
+        },
     };
 
     Json(StatsResponse {
@@ -157,6 +181,9 @@ pub async fn get_stats(State(state): State<Arc<AppState>>) -> Json<StatsResponse
         query_cache_hit_rate: query_hit_rate,
         query_cache_evictions: cache_stats.evictions.load(Ordering::Relaxed),
         query_cache_invalidations: cache_stats.invalidations.load(Ordering::Relaxed),
+
+        // Neural predictor / ML statistics
+        neural_predictor,
     })
 }
 
@@ -866,15 +893,62 @@ pub async fn find_series(
 /// - Bits per sample achieved
 /// - Encoding/decoding latencies
 /// - Error counts
-pub async fn get_compression_stats() -> Json<serde_json::Value> {
+/// - Neural predictor learning stats (when using Neural strategy)
+pub async fn get_compression_stats(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     let metrics = compression_metrics();
     let snapshot = metrics.snapshot();
 
-    Json(
-        serde_json::to_value(&snapshot).unwrap_or(serde_json::json!({
-            "error": "Failed to serialize compression stats"
-        })),
-    )
+    // Get neural predictor stats
+    let neural_stats = state.db.neural_predictor().stats();
+
+    // Calculate usage distribution as percentages
+    let total_usage: u64 = neural_stats.codec_counts.iter().sum();
+    let usage_pct = if total_usage > 0 {
+        neural_stats
+            .codec_counts
+            .iter()
+            .map(|&c| (c as f64 / total_usage as f64) * 100.0)
+            .collect::<Vec<_>>()
+    } else {
+        vec![0.0; 5]
+    };
+
+    let neural_json = serde_json::json!({
+        "sample_count": neural_stats.sample_count,
+        "learning_rate": neural_stats.learning_rate,
+        "codec_usage_counts": {
+            "kuba": neural_stats.codec_counts[0],
+            "chimp": neural_stats.codec_counts[1],
+            "alp": neural_stats.codec_counts[2],
+            "delta_lz4": neural_stats.codec_counts[3],
+            "delta_zstd": neural_stats.codec_counts[4],
+        },
+        "codec_usage_percent": {
+            "kuba": format!("{:.1}%", usage_pct[0]),
+            "chimp": format!("{:.1}%", usage_pct[1]),
+            "alp": format!("{:.1}%", usage_pct[2]),
+            "delta_lz4": format!("{:.1}%", usage_pct[3]),
+            "delta_zstd": format!("{:.1}%", usage_pct[4]),
+        },
+        "avg_compression_ratios": {
+            "kuba": format!("{:.2}x", neural_stats.avg_ratios[0]),
+            "chimp": format!("{:.2}x", neural_stats.avg_ratios[1]),
+            "alp": format!("{:.2}x", neural_stats.avg_ratios[2]),
+            "delta_lz4": format!("{:.2}x", neural_stats.avg_ratios[3]),
+            "delta_zstd": format!("{:.2}x", neural_stats.avg_ratios[4]),
+        },
+        "best_performing_codec": format!("{:?}", neural_stats.best_performing_codec()),
+        "is_warmed_up": neural_stats.sample_count >= 50,
+        "strategy": format!("{:?}", state.db.compression_strategy()),
+    });
+
+    // Merge compression metrics with neural stats
+    let mut result = serde_json::to_value(&snapshot).unwrap_or(serde_json::json!({}));
+    if let Some(obj) = result.as_object_mut() {
+        obj.insert("neural_predictor".to_string(), neural_json);
+    }
+
+    Json(result)
 }
 
 // =============================================================================

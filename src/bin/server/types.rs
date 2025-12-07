@@ -356,6 +356,48 @@ pub struct StatsResponse {
     pub query_cache_hit_rate: f64,
     pub query_cache_evictions: u64,
     pub query_cache_invalidations: u64,
+
+    // Neural predictor / ML statistics
+    pub neural_predictor: NeuralPredictorStatsResponse,
+}
+
+/// Neural predictor (ML) statistics for adaptive codec selection
+#[derive(Debug, Serialize)]
+pub struct NeuralPredictorStatsResponse {
+    /// Total compression samples learned from
+    pub sample_count: u64,
+    /// Current learning rate (decreases as model matures)
+    pub learning_rate: f64,
+    /// Whether the predictor has enough samples to make predictions (>= 50)
+    pub is_warmed_up: bool,
+    /// Current codec selection strategy
+    pub strategy: String,
+    /// Best performing codec based on compression ratio
+    pub best_codec: String,
+    /// Per-codec usage counts
+    pub codec_usage: CodecUsageStats,
+    /// Per-codec average compression ratios
+    pub codec_ratios: CodecRatioStats,
+}
+
+/// Per-codec usage counts
+#[derive(Debug, Serialize)]
+pub struct CodecUsageStats {
+    pub kuba: u64,
+    pub chimp: u64,
+    pub alp: u64,
+    pub delta_lz4: u64,
+    pub delta_zstd: u64,
+}
+
+/// Per-codec average compression ratios
+#[derive(Debug, Serialize)]
+pub struct CodecRatioStats {
+    pub kuba: f64,
+    pub chimp: f64,
+    pub alp: f64,
+    pub delta_lz4: f64,
+    pub delta_zstd: f64,
 }
 
 /// Health response
