@@ -23,6 +23,13 @@
 //! - `POST /api/v1/integrity/scan` - Scan storage for corrupted chunks
 //! - `GET /api/v1/compression/stats` - Compression performance metrics
 //!
+//! # CLI Commands
+//!
+//! - `start` - Start the HTTP server (default if no command specified)
+//! - `check-config` - Validate configuration file
+//! - `stats` - Show database statistics without starting server
+//! - `compact` - Run compaction on data directory
+//!
 //! # Configuration
 //!
 //! The server reads configuration from:
@@ -39,6 +46,8 @@ mod config;
 mod handlers;
 mod query_router;
 mod types;
+
+use clap::{Parser, Subcommand};
 
 use axum::{
     http::{HeaderValue, Method},
@@ -226,6 +235,7 @@ async fn init_database(
         max_chunk_size: config.max_chunk_size,
         retention_days: config.retention_days,
         custom_options: HashMap::new(),
+        ..Default::default()
     };
 
     let storage_dyn: Arc<dyn kuba_tsdb::engine::traits::StorageEngine + Send + Sync> =
@@ -306,13 +316,333 @@ async fn init_database(
 }
 
 // =============================================================================
+// CLI Definition
+// =============================================================================
+
+/// Kuba TSDB - High-performance time-series database
+#[derive(Parser)]
+#[command(name = "kuba-tsdb")]
+#[command(author = "Victor Oseghale")]
+#[command(version)]
+#[command(about = "High-performance time-series database with adaptive compression", long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+
+    /// Path to configuration file (overrides TSDB_CONFIG env var)
+    #[arg(short, long, global = true)]
+    config: Option<std::path::PathBuf>,
+
+    /// Override listen address (e.g., 0.0.0.0:8080)
+    #[arg(short, long, global = true)]
+    listen: Option<String>,
+
+    /// Override data directory path
+    #[arg(short, long, global = true)]
+    data_dir: Option<std::path::PathBuf>,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Start the HTTP server (default)
+    Start,
+
+    /// Validate configuration file without starting the server
+    CheckConfig,
+
+    /// Show database statistics without starting the server
+    Stats {
+        /// Output format (text, json)
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Run compaction on the data directory
+    Compact {
+        /// Dry run - show what would be compacted without actually doing it
+        #[arg(long)]
+        dry_run: bool,
+    },
+
+    /// Show compression statistics
+    CompressionStats,
+}
+
+// =============================================================================
+// CLI Command Handlers
+// =============================================================================
+
+/// Validate configuration and print summary
+async fn cmd_check_config(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
+    // Apply config path override if specified
+    if let Some(config_path) = &cli.config {
+        std::env::set_var("TSDB_CONFIG", config_path);
+    }
+
+    let (config, app_config) = config::load_config_with_app();
+
+    println!("Configuration is valid!");
+    println!();
+    println!("Server Settings:");
+    println!("  Listen address: {}", config.listen_addr);
+    println!("  Data directory: {:?}", config.data_dir);
+    println!("  Max chunk size: {} bytes", config.max_chunk_size);
+    println!();
+    println!("Redis Settings:");
+    println!("  Enabled: {}", app_config.redis.enabled);
+    if app_config.redis.enabled {
+        // Sanitize URL to hide credentials
+        let sanitized = kuba_tsdb::redis::util::sanitize_url(&app_config.redis.url);
+        println!("  URL: {}", sanitized);
+        println!("  Pool size: {}", app_config.redis.pool_size);
+    }
+    println!();
+    println!("Monitoring:");
+    println!(
+        "  Prometheus enabled: {}",
+        app_config.monitoring.prometheus_enabled
+    );
+    println!("  Log level: {}", app_config.server.log_level);
+
+    Ok(())
+}
+
+/// Show database statistics without starting the server
+async fn cmd_stats(cli: &Cli, format: &str) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(config_path) = &cli.config {
+        std::env::set_var("TSDB_CONFIG", config_path);
+    }
+
+    let (mut config, app_config) = config::load_config_with_app();
+
+    // Apply CLI overrides
+    if let Some(data_dir) = &cli.data_dir {
+        config.data_dir = data_dir.clone();
+    }
+
+    // Initialize storage to read stats
+    let storage = kuba_tsdb::storage::LocalDiskEngine::new(config.data_dir.clone())?;
+    storage.load_index().await?;
+
+    let series_ids = storage.get_all_series_ids();
+    let series_metadata = storage.get_all_series_metadata();
+
+    // Calculate storage size
+    let storage_size = calculate_dir_size(&config.data_dir)?;
+
+    if format == "json" {
+        let stats = serde_json::json!({
+            "data_dir": config.data_dir,
+            "series_count": series_ids.len(),
+            "series_with_metadata": series_metadata.len(),
+            "storage_size_bytes": storage_size,
+            "storage_size_human": format_bytes(storage_size),
+            "redis_enabled": app_config.redis.enabled,
+        });
+        println!("{}", serde_json::to_string_pretty(&stats)?);
+    } else {
+        println!("Kuba TSDB Statistics");
+        println!("====================");
+        println!();
+        println!("Data directory: {:?}", config.data_dir);
+        println!("Series count: {}", series_ids.len());
+        println!("Series with metadata: {}", series_metadata.len());
+        println!("Storage size: {}", format_bytes(storage_size));
+        println!("Redis enabled: {}", app_config.redis.enabled);
+    }
+
+    Ok(())
+}
+
+/// Run compaction on the data directory
+async fn cmd_compact(cli: &Cli, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(config_path) = &cli.config {
+        std::env::set_var("TSDB_CONFIG", config_path);
+    }
+
+    let (mut config, _) = config::load_config_with_app();
+
+    if let Some(data_dir) = &cli.data_dir {
+        config.data_dir = data_dir.clone();
+    }
+
+    println!("Compacting data directory: {:?}", config.data_dir);
+
+    if dry_run {
+        println!("[DRY RUN] Would compact the following:");
+        // List files that would be compacted
+        let storage = kuba_tsdb::storage::LocalDiskEngine::new(config.data_dir.clone())?;
+        storage.load_index().await?;
+        let series_ids = storage.get_all_series_ids();
+        println!("  Series to process: {}", series_ids.len());
+        println!("[DRY RUN] No changes made.");
+        return Ok(());
+    }
+
+    // Create storage and run maintenance
+    let storage = kuba_tsdb::storage::LocalDiskEngine::new(config.data_dir.clone())?;
+    storage.load_index().await?;
+
+    println!("Running maintenance...");
+    let start = std::time::Instant::now();
+
+    use kuba_tsdb::engine::traits::StorageEngine;
+    match storage.maintenance().await {
+        Ok(report) => {
+            println!("Compaction complete in {:?}", start.elapsed());
+            println!("  Chunks compacted: {}", report.chunks_compacted);
+            println!("  Chunks deleted: {}", report.chunks_deleted);
+            println!("  Bytes freed: {}", format_bytes(report.bytes_freed));
+        },
+        Err(e) => {
+            eprintln!("Compaction failed: {}", e);
+            return Err(e.into());
+        },
+    }
+
+    Ok(())
+}
+
+/// Show compression statistics
+async fn cmd_compression_stats(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(config_path) = &cli.config {
+        std::env::set_var("TSDB_CONFIG", config_path);
+    }
+
+    let (mut config, _) = config::load_config_with_app();
+
+    if let Some(data_dir) = &cli.data_dir {
+        config.data_dir = data_dir.clone();
+    }
+
+    // Get compression metrics
+    let metrics = kuba_tsdb::compression::global_metrics();
+    let snapshot = metrics.snapshot();
+    let total = &snapshot.total;
+
+    println!("Compression Statistics");
+    println!("======================");
+    println!();
+    println!("Uptime: {} seconds", snapshot.uptime_secs);
+    println!();
+    println!("Totals:");
+    println!("  Compressions: {}", total.compress_count);
+    println!("  Decompressions: {}", total.decompress_count);
+    println!("  Original bytes: {}", format_bytes(total.original_bytes));
+    println!(
+        "  Compressed bytes: {}",
+        format_bytes(total.compressed_bytes)
+    );
+    println!("  Points compressed: {}", total.points_compressed);
+    println!();
+    println!("Performance:");
+    println!(
+        "  Compression ratio: {:.2}:1",
+        snapshot.overall_compression_ratio
+    );
+    println!("  Bits per sample: {:.2}", snapshot.overall_bits_per_sample);
+    if total.compress_count > 0 {
+        let avg_compress_us = total.compress_time_us / total.compress_count;
+        println!("  Avg compression time: {} µs", avg_compress_us);
+    }
+    if total.decompress_count > 0 {
+        let avg_decompress_us = total.decompress_time_us / total.decompress_count;
+        println!("  Avg decompression time: {} µs", avg_decompress_us);
+    }
+
+    // Show per-codec breakdown if there are multiple codecs
+    if !snapshot.per_codec.is_empty() {
+        println!();
+        println!("Per-Codec Breakdown:");
+        for (codec, metrics) in &snapshot.per_codec {
+            if metrics.compress_count > 0 {
+                let ratio = if metrics.compressed_bytes > 0 {
+                    metrics.original_bytes as f64 / metrics.compressed_bytes as f64
+                } else {
+                    0.0
+                };
+                println!(
+                    "  {}: {} compressions, {:.2}:1 ratio",
+                    codec, metrics.compress_count, ratio
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Calculate total size of a directory
+fn calculate_dir_size(path: &std::path::Path) -> Result<u64, std::io::Error> {
+    let mut total = 0;
+    if path.is_dir() {
+        for entry in std::fs::read_dir(path)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                total += calculate_dir_size(&path)?;
+            } else {
+                total += entry.metadata()?.len();
+            }
+        }
+    }
+    Ok(total)
+}
+
+/// Format bytes into human-readable string
+fn format_bytes(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    const GB: u64 = MB * 1024;
+    const TB: u64 = GB * 1024;
+
+    if bytes >= TB {
+        format!("{:.2} TB", bytes as f64 / TB as f64)
+    } else if bytes >= GB {
+        format!("{:.2} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.2} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.2} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{} bytes", bytes)
+    }
+}
+
+// =============================================================================
 // Main Entry Point
 // =============================================================================
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let cli = Cli::parse();
+
+    // Route to appropriate command handler
+    match &cli.command {
+        Some(Commands::CheckConfig) => return cmd_check_config(&cli).await,
+        Some(Commands::Stats { format }) => return cmd_stats(&cli, format).await,
+        Some(Commands::Compact { dry_run }) => return cmd_compact(&cli, *dry_run).await,
+        Some(Commands::CompressionStats) => return cmd_compression_stats(&cli).await,
+        Some(Commands::Start) | None => {
+            // Continue with server startup below
+        },
+    }
+
+    // Apply config path override if specified via CLI
+    if let Some(config_path) = &cli.config {
+        std::env::set_var("TSDB_CONFIG", config_path);
+    }
+
     // Initialize tracing
-    let (config, app_config) = load_config_with_app();
+    let (mut config, app_config) = load_config_with_app();
+
+    // Apply CLI overrides for listen address and data directory
+    if let Some(listen) = &cli.listen {
+        config.listen_addr = listen.clone();
+    }
+    if let Some(data_dir) = &cli.data_dir {
+        config.data_dir = data_dir.clone();
+    }
 
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(&app_config.server.log_level));
@@ -394,6 +724,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         subscriptions,
         query_cache,
         invalidation_publisher,
+    });
+
+    // Start background task to log neural predictor learning progress
+    // Logs every 5 minutes when there's new learning activity
+    let neural_state = state.clone();
+    tokio::spawn(async move {
+        let mut last_sample_count = 0u64;
+        let mut interval = tokio::time::interval(Duration::from_secs(300)); // 5 minutes
+        interval.tick().await; // Skip first immediate tick
+
+        loop {
+            interval.tick().await;
+            let stats = neural_state.db.neural_predictor().stats();
+
+            // Only log if there's been learning activity since last check
+            if stats.sample_count > last_sample_count {
+                let new_samples = stats.sample_count - last_sample_count;
+                info!(
+                    samples = stats.sample_count,
+                    new_samples = new_samples,
+                    learning_rate = format!("{:.5}", stats.learning_rate),
+                    best_codec = ?stats.best_performing_codec(),
+                    strategy = ?neural_state.db.compression_strategy(),
+                    "Neural predictor learning progress"
+                );
+                last_sample_count = stats.sample_count;
+            }
+        }
     });
 
     // Build router
