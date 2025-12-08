@@ -996,12 +996,11 @@ impl AggQueryPlanner {
             // Number of windows = ceil(duration / step)
             // SEC: Use checked arithmetic to prevent overflow
             if step_ms > 0 {
-                let num_windows = duration_ms
+                duration_ms
                     .checked_add(step_ms - 1)
                     .and_then(|d| d.checked_div(step_ms))
                     .map(|n| n.max(1) as u64)
-                    .unwrap_or(u64::MAX);
-                num_windows
+                    .unwrap_or(u64::MAX)
             } else {
                 1
             }
@@ -1012,16 +1011,10 @@ impl AggQueryPlanner {
 
         // Memory: ~16 bytes per input point (timestamp + value)
         // Plus ~24 bytes per output point (AggregatedPoint)
-        // SEC: Use checked arithmetic to prevent overflow
-        let input_memory = (total_points as usize)
-            .checked_mul(16)
-            .unwrap_or(usize::MAX);
-        let output_memory = (estimated_output_points as usize)
-            .checked_mul(24)
-            .unwrap_or(usize::MAX);
-        let estimated_memory = input_memory
-            .checked_add(output_memory)
-            .unwrap_or(usize::MAX);
+        // SEC: Use saturating arithmetic to prevent overflow
+        let input_memory = (total_points as usize).saturating_mul(16);
+        let output_memory = (estimated_output_points as usize).saturating_mul(24);
+        let estimated_memory = input_memory.saturating_add(output_memory);
 
         // CPU cost based on operation complexity
         let cpu_factor = match query.function {
