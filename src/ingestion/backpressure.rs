@@ -92,6 +92,15 @@ impl BackpressureConfig {
         if self.queue_warning_threshold > 100 {
             return Err("queue_warning_threshold must be <= 100".to_string());
         }
+        if self.block_check_interval.is_zero() {
+            return Err("block_check_interval must be > 0".to_string());
+        }
+        if self.max_block_time.is_zero() {
+            return Err("max_block_time must be > 0".to_string());
+        }
+        if self.block_check_interval > self.max_block_time {
+            return Err("block_check_interval must be <= max_block_time".to_string());
+        }
         Ok(())
     }
 
@@ -190,8 +199,14 @@ impl BackpressureController {
     }
 
     /// Increment queue depth by one
+    ///
+    /// Uses saturating addition to prevent overflow at usize::MAX.
     pub fn increment_queue(&self) {
-        self.queue_depth.fetch_add(1, Ordering::Relaxed);
+        let _ = self
+            .queue_depth
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                Some(current.saturating_add(1))
+            });
         self.check_backpressure();
     }
 
@@ -249,26 +264,26 @@ impl BackpressureController {
         let memory_warning_threshold = self.config.memory_warning_bytes();
         let queue_warning_threshold = self.config.queue_warning_count();
 
-        // Memory warning
+        // Memory warning - use u128 to prevent overflow in percentage calculation
         if memory >= memory_warning_threshold {
             if !self.memory_warning_logged.swap(true, Ordering::Relaxed) {
+                let percent = ((memory as u128) * 100 / (self.config.memory_limit as u128)) as u8;
                 warn!(
                     "Memory usage high: {} bytes ({}% of limit)",
-                    memory,
-                    memory * 100 / self.config.memory_limit
+                    memory, percent
                 );
             }
         } else {
             self.memory_warning_logged.store(false, Ordering::Relaxed);
         }
 
-        // Queue warning
+        // Queue warning - use u128 to prevent overflow in percentage calculation
         if queue >= queue_warning_threshold {
             if !self.queue_warning_logged.swap(true, Ordering::Relaxed) {
+                let percent = ((queue as u128) * 100 / (self.config.queue_limit as u128)) as u8;
                 warn!(
                     "Queue depth high: {} ({}% of limit)",
-                    queue,
-                    queue * 100 / self.config.queue_limit
+                    queue, percent
                 );
             }
         } else {
