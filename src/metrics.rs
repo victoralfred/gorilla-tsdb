@@ -219,11 +219,8 @@ pub fn gather_metrics() -> Result<String, String> {
 /// Record a write operation
 #[inline]
 pub fn record_write(series_id: u128, duration_secs: f64, success: bool) {
-    let status = if success {
-        "success".to_string()
-    } else {
-        "error".to_string()
-    };
+    // Avoid heap allocations for status label
+    let status: &str = if success { "success" } else { "error" };
     let series_id_str = series_id.to_string();
 
     WRITES_TOTAL

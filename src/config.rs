@@ -157,6 +157,12 @@ impl ApplicationConfig {
     pub fn apply_env_overrides(&mut self) -> ConfigResult<()> {
         // Server overrides
         if let Ok(val) = std::env::var("Kuba_SERVER_LISTEN_ADDR") {
+            // Validate socket address format before applying override
+            val.parse::<std::net::SocketAddr>().map_err(|_| {
+                ConfigError::EnvVar(format!(
+                    "Kuba_SERVER_LISTEN_ADDR must be a valid socket address, got '{val}'"
+                ))
+            })?;
             self.server.listen_addr = val;
         }
         if let Ok(val) = std::env::var("Kuba_SERVER_WORKERS") {
@@ -165,11 +171,26 @@ impl ApplicationConfig {
                 .map_err(|_| ConfigError::EnvVar("Kuba_SERVER_WORKERS must be a number".into()))?;
         }
         if let Ok(val) = std::env::var("Kuba_SERVER_LOG_LEVEL") {
-            self.server.log_level = val;
+            // Normalize and validate log level
+            let level = val.to_lowercase();
+            let valid_levels = ["trace", "debug", "info", "warn", "error"];
+            if !valid_levels.contains(&level.as_str()) {
+                return Err(ConfigError::EnvVar(format!(
+                    "Kuba_SERVER_LOG_LEVEL must be one of {:?}, got '{val}'",
+                    valid_levels
+                )));
+            }
+            self.server.log_level = level;
         }
 
         // Storage overrides
         if let Ok(val) = std::env::var("Kuba_STORAGE_DATA_DIR") {
+            // Basic path traversal guard
+            if val.contains("..") || val.contains('\0') {
+                return Err(ConfigError::EnvVar(format!(
+                    "Kuba_STORAGE_DATA_DIR contains invalid path components: '{val}'"
+                )));
+            }
             self.storage.data_dir = PathBuf::from(val);
         }
 
@@ -184,11 +205,32 @@ impl ApplicationConfig {
 
         // Rate limit overrides
         if let Ok(val) = std::env::var("Kuba_RATE_LIMIT_ENABLED") {
-            self.rate_limit.enabled = val.parse().unwrap_or(true);
+            // Accept common boolean forms instead of silently defaulting
+            self.rate_limit.enabled = match val.to_lowercase().as_str() {
+                "true" | "1" | "yes" | "on" => true,
+                "false" | "0" | "no" | "off" => false,
+                _ => {
+                    return Err(ConfigError::EnvVar(
+                        "Kuba_RATE_LIMIT_ENABLED must be a boolean (true/false)".into(),
+                    ))
+                },
+            };
         }
 
         // Redis overrides
         if let Ok(val) = std::env::var("Kuba_REDIS_URL") {
+            // Basic URL format check to prevent accidental garbage input
+            if !val.starts_with("redis://") && !val.starts_with("rediss://") {
+                return Err(ConfigError::EnvVar(format!(
+                    "Kuba_REDIS_URL must start with redis:// or rediss://, got '{val}'"
+                )));
+            }
+            // Avoid extremely large URLs that could be used for DoS
+            if val.len() > 2048 {
+                return Err(ConfigError::EnvVar(
+                    "Kuba_REDIS_URL is too long (max 2048 characters)".into(),
+                ));
+            }
             self.redis.url = val;
             self.redis.enabled = true;
         }
