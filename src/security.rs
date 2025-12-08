@@ -133,7 +133,7 @@ impl PerClientRateLimiter {
         let now = Instant::now();
 
         // Use upgradable read to avoid double-locking in the hot path
-        let mut clients = self.clients.upgradable_read();
+        let clients = self.clients.upgradable_read();
 
         if let Some(state) = clients.get(client_id) {
             // If we're still in the same window and at the limit, short-circuit without upgrading
