@@ -299,7 +299,8 @@ impl MemoryTracker {
     pub fn can_insert(&self, size: usize) -> bool {
         let current = self.current_bytes.load(Ordering::Relaxed);
         // SEC: Use checked arithmetic to prevent overflow
-        current.checked_add(size)
+        current
+            .checked_add(size)
             .map(|total| total <= self.max_bytes)
             .unwrap_or(false) // Overflow means definitely can't insert
     }
@@ -312,10 +313,13 @@ impl MemoryTracker {
     pub fn on_insert(&self, shard_id: usize, size: usize) {
         // SEC: Use saturating arithmetic to prevent overflow
         // If overflow would occur, cap at max_bytes
-        let new_total = self.current_bytes.load(Ordering::Relaxed).saturating_add(size);
+        let new_total = self
+            .current_bytes
+            .load(Ordering::Relaxed)
+            .saturating_add(size);
         let capped_total = new_total.min(self.max_bytes);
         self.current_bytes.store(capped_total, Ordering::Relaxed);
-        
+
         // Update per-shard tracking (also with overflow protection)
         if let Some(shard_bytes) = self.per_shard_bytes.get(shard_id) {
             let new_shard = shard_bytes.load(Ordering::Relaxed).saturating_add(size);
@@ -956,7 +960,7 @@ impl<T: Clone + Send + Sync + 'static> CacheManager<T> {
         if size_bytes > MAX_ENTRY_SIZE {
             return false; // Reject entries that are too large
         }
-        
+
         // SEC: Prevent inserting entries larger than cache capacity
         if size_bytes > self.config.max_size_bytes {
             return false;
@@ -1057,7 +1061,7 @@ impl<T: Clone + Send + Sync + 'static> CacheManager<T> {
             if freed_bytes >= target_bytes {
                 return true;
             }
-            
+
             if total_attempts >= MAX_TOTAL_EVICTION_ATTEMPTS {
                 // Prevent infinite loop
                 break;
@@ -1178,7 +1182,7 @@ impl<T: Clone + Send + Sync + 'static> CacheManager<T> {
                                     if attempts >= MAX_EVICTION_ATTEMPTS {
                                         break;
                                     }
-                                    
+
                                     while freed < to_free && attempts < MAX_EVICTION_ATTEMPTS {
                                         if let Some((_, entry)) = shards[shard_id].pop_lru() {
                                             let size = entry.metadata.size_bytes;

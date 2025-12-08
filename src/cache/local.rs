@@ -193,7 +193,7 @@ where
                     entries.remove(&k);
                 }
             }
-            
+
             eviction_attempts += 1;
         }
 

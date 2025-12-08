@@ -298,7 +298,8 @@ impl QueryCache {
                 entries.remove(&key);
                 // SEC: Use saturating subtraction to prevent underflow
                 let old_size = self.current_size.load(Ordering::Relaxed);
-                self.current_size.store(old_size.saturating_sub(size), Ordering::Relaxed);
+                self.current_size
+                    .store(old_size.saturating_sub(size), Ordering::Relaxed);
                 self.stats.misses.fetch_add(1, Ordering::Relaxed);
                 return None;
             }
@@ -344,7 +345,7 @@ impl QueryCache {
             // Entry too large - don't cache it
             return;
         }
-        
+
         // SEC: Reject entries larger than entire cache
         if entry_size > self.config.max_size_bytes {
             return;
@@ -359,7 +360,8 @@ impl QueryCache {
             let old_size = old_entry.size_bytes as u64;
             // SEC: Use saturating subtraction to prevent underflow
             let current = self.current_size.load(Ordering::Relaxed);
-            self.current_size.store(current.saturating_sub(old_size), Ordering::Relaxed);
+            self.current_size
+                .store(current.saturating_sub(old_size), Ordering::Relaxed);
 
             // Remove from series index
             let mut series_idx = self.series_index.write();
@@ -422,10 +424,7 @@ impl QueryCache {
                 .map(|keys| {
                     // SEC: Limit batch size to prevent DoS via invalidation storm
                     const MAX_INVALIDATION_BATCH: usize = 10_000;
-                    keys.iter()
-                        .copied()
-                        .take(MAX_INVALIDATION_BATCH)
-                        .collect()
+                    keys.iter().copied().take(MAX_INVALIDATION_BATCH).collect()
                 })
                 .unwrap_or_default()
         };
@@ -478,7 +477,10 @@ impl QueryCache {
         if let Some(entry) = entries.remove(&key) {
             // SEC: Use saturating subtraction to prevent underflow
             let current = self.current_size.load(Ordering::Relaxed);
-            self.current_size.store(current.saturating_sub(entry.size_bytes as u64), Ordering::Relaxed);
+            self.current_size.store(
+                current.saturating_sub(entry.size_bytes as u64),
+                Ordering::Relaxed,
+            );
             self.stats.invalidations.fetch_add(1, Ordering::Relaxed);
 
             // Remove from series index
@@ -559,7 +561,7 @@ impl QueryCache {
             } else {
                 current as usize
             };
-            
+
             // SEC: Use checked arithmetic
             if let Some(total) = current_usize.checked_add(new_entry_size) {
                 if total <= self.config.max_size_bytes || entries.is_empty() {
@@ -568,11 +570,11 @@ impl QueryCache {
             } else {
                 // Overflow: must evict
             }
-            
+
             if eviction_count_size >= MAX_EVICTION_ATTEMPTS {
                 break; // Prevent infinite loop
             }
-            
+
             self.evict_lru(&mut entries);
             eviction_count_size += 1;
         }
