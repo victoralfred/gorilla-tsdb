@@ -1062,10 +1062,9 @@ impl<T: Clone + Send + Sync + 'static> CacheManager<T> {
 
         // SEC: Limit eviction attempts to prevent DoS
         const MAX_TOTAL_EVICTION_ATTEMPTS: usize = 1000;
-        let mut total_attempts = 0;
 
         // Try to evict from each shard in round-robin
-        for _ in 0..self.shards.len() * 10 {
+        for total_attempts in 0..self.shards.len() * 10 {
             // Max 10 attempts per shard
             if freed_bytes >= target_bytes {
                 return true;
@@ -1075,7 +1074,6 @@ impl<T: Clone + Send + Sync + 'static> CacheManager<T> {
                 // Prevent infinite loop
                 break;
             }
-            total_attempts += 1;
 
             // Find shard with most memory usage
             let mut max_shard_id = 0;
