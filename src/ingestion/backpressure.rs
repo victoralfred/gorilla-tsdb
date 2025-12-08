@@ -351,41 +351,27 @@ impl BackpressureController {
             .unwrap_or_default()
             .as_nanos() as u64;
 
-        // Memory warning with rate limiting
+        // Memory warning - use u128 to prevent overflow in percentage calculation
         if memory >= memory_warning_threshold {
-            let last_warning = self.last_memory_warning_nanos.load(Ordering::Relaxed);
-            let elapsed = now_nanos.saturating_sub(last_warning);
-            if last_warning == 0 || elapsed >= cooldown_nanos {
-                if self
-                    .last_memory_warning_nanos
-                    .compare_exchange(last_warning, now_nanos, Ordering::SeqCst, Ordering::Relaxed)
-                    .is_ok()
-                {
-                    let percent =
-                        ((memory as u128) * 100 / (self.config.memory_limit as u128)) as u8;
-                    warn!(
-                        "Memory usage high: {} bytes ({}% of limit)",
-                        memory, percent
-                    );
-                }
+            if !self.memory_warning_logged.swap(true, Ordering::Relaxed) {
+                let percent = ((memory as u128) * 100 / (self.config.memory_limit as u128)) as u8;
+                warn!(
+                    "Memory usage high: {} bytes ({}% of limit)",
+                    memory, percent
+                );
             }
         } else {
             self.last_memory_warning_nanos.store(0, Ordering::Relaxed);
         }
 
-        // Queue warning with rate limiting
+        // Queue warning - use u128 to prevent overflow in percentage calculation
         if queue >= queue_warning_threshold {
-            let last_warning = self.last_queue_warning_nanos.load(Ordering::Relaxed);
-            let elapsed = now_nanos.saturating_sub(last_warning);
-            if last_warning == 0 || elapsed >= cooldown_nanos {
-                if self
-                    .last_queue_warning_nanos
-                    .compare_exchange(last_warning, now_nanos, Ordering::SeqCst, Ordering::Relaxed)
-                    .is_ok()
-                {
-                    let percent = ((queue as u128) * 100 / (self.config.queue_limit as u128)) as u8;
-                    warn!("Queue depth high: {} ({}% of limit)", queue, percent);
-                }
+            if !self.queue_warning_logged.swap(true, Ordering::Relaxed) {
+                let percent = ((queue as u128) * 100 / (self.config.queue_limit as u128)) as u8;
+                warn!(
+                    "Queue depth high: {} ({}% of limit)",
+                    queue, percent
+                );
             }
         } else {
             self.last_queue_warning_nanos.store(0, Ordering::Relaxed);
