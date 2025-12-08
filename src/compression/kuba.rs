@@ -797,7 +797,7 @@ impl Compressor for KubaCompressor {
         Self::compress_timestamps(points, &mut writer)?;
         Self::compress_values(points, &mut writer);
 
-        let compressed_data = writer.finish();
+        let compressed_data = writer.finish()?;
         let compressed_size = compressed_data.len();
         let original_size = size_of_val(points);
 
