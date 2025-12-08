@@ -219,19 +219,15 @@ pub fn gather_metrics() -> Result<String, String> {
 /// Record a write operation
 #[inline]
 pub fn record_write(series_id: u128, duration_secs: f64, success: bool) {
-    let status = if success {
-        "success".to_string()
-    } else {
-        "error".to_string()
-    };
+    let status = if success { "success" } else { "error" };
     let series_id_str = series_id.to_string();
 
     WRITES_TOTAL
-        .with_label_values(&[&series_id_str, &status])
+        .with_label_values(&[series_id_str.as_str(), status])
         .inc();
 
     WRITE_DURATION
-        .with_label_values(&[&series_id_str])
+        .with_label_values(&[series_id_str.as_str()])
         .observe(duration_secs);
 }
 

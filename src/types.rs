@@ -717,6 +717,11 @@ impl TagFilter {
 
             // Pattern matching with glob wildcards or regex
             TagFilter::Pattern(pattern) => {
+                // Prevent excessively large patterns from triggering regex DoS
+                if pattern.len() > 4096 {
+                    return false;
+                }
+
                 // Parse pattern: "key=value_pattern,key2=value_pattern2"
                 for condition in pattern.split(',') {
                     let condition = condition.trim();

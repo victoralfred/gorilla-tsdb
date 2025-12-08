@@ -132,23 +132,20 @@ impl PerClientRateLimiter {
     pub fn check_client(&self, client_id: &str) -> bool {
         let now = Instant::now();
 
-        // Fast path: check if client exists and is within limits
-        {
-            let clients = self.clients.read();
-            if let Some(state) = clients.get(client_id) {
-                // Check if we're still in the same window
-                if now.duration_since(state.window_start) < self.window {
-                    // Still in window - check count
-                    if state.request_count >= self.max_requests_per_second {
-                        return false; // Rate limited
-                    }
-                }
-                // Either new window or under limit - need write lock
+        // Use upgradable read to avoid double-locking in the hot path
+        let clients = self.clients.upgradable_read();
+
+        if let Some(state) = clients.get(client_id) {
+            // If we're still in the same window and at the limit, short-circuit without upgrading
+            if now.duration_since(state.window_start) < self.window
+                && state.request_count >= self.max_requests_per_second
+            {
+                return false;
             }
         }
 
-        // Slow path: update client state
-        let mut clients = self.clients.write();
+        // Upgrade to write lock only when we need to mutate state
+        let mut clients = parking_lot::RwLockUpgradableReadGuard::upgrade(clients);
 
         // Cleanup if we're at capacity
         if clients.len() >= self.max_clients && !clients.contains_key(client_id) {
