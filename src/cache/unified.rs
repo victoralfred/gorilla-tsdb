@@ -195,10 +195,7 @@ impl UnifiedCacheManager {
         };
 
         // Include query cache size in total memory (approximate)
-        // SEC: Use checked arithmetic to prevent overflow
-        let total_memory = s_memory
-            .checked_add(query_stats.size_bytes as usize)
-            .unwrap_or(usize::MAX); // Cap at max if overflow
+        let total_memory = s_memory + query_stats.size_bytes as usize;
 
         UnifiedCacheStats {
             storage: storage_stats,
