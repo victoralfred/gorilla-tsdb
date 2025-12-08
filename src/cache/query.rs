@@ -359,13 +359,8 @@ impl QueryCache {
 
         // Calculate net size change (new entry - old entry if replacing)
         // If replacing, we only need to evict for the net increase
-        let net_size_needed = if entry_size > old_entry_size {
-            entry_size - old_entry_size
-        } else {
-            // Old entry is larger or equal, so no additional space needed
-            // But we still need to evict if we're at entry count limit
-            0
-        };
+        // SEC: Use saturating_sub to handle case where old entry is larger
+        let net_size_needed = entry_size.saturating_sub(old_entry_size);
 
         // SEC: Evict entries to make space, but only insert if eviction succeeded
         // This prevents silently exceeding cache size limits
