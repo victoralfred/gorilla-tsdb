@@ -199,11 +199,17 @@ impl WriteBufferManager {
         }
 
         // Batch atomic updates - single update instead of per-point
+        // Use saturating arithmetic to prevent integer overflow
         if new_points > 0 {
             self.total_buffered.fetch_add(new_points, Ordering::Relaxed);
             // Approximate memory increase: 16 bytes per point (timestamp + value)
-            self.memory_used
-                .fetch_add(new_points.saturating_mul(16), Ordering::Relaxed);
+            // Use saturating_mul to prevent overflow
+            let memory_increase = new_points.saturating_mul(16);
+            let _ =
+                self.memory_used
+                    .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                        Some(current.saturating_add(memory_increase))
+                    });
         }
 
         // Record overwrites in metrics
@@ -239,12 +245,17 @@ impl WriteBufferManager {
         let series_id = point.series_id;
 
         // Check series count limit before creating new buffer
-        let is_new_series = !self.buffers.contains_key(&series_id);
-        if is_new_series && self.buffers.len() >= self.config.max_series_count {
-            return Err(IngestionError::ValidationError(format!(
-                "Maximum series count {} exceeded",
-                self.config.max_series_count
-            )));
+        // Use len() check first to avoid unnecessary contains_key lookup
+        let current_series_count = self.buffers.len();
+        if current_series_count >= self.config.max_series_count {
+            // Only check if it's a new series if we're at the limit
+            let is_new_series = !self.buffers.contains_key(&series_id);
+            if is_new_series {
+                return Err(IngestionError::ValidationError(format!(
+                    "Maximum series count {} exceeded",
+                    self.config.max_series_count
+                )));
+            }
         }
 
         // Get or create buffer for this series
@@ -278,12 +289,17 @@ impl WriteBufferManager {
         let series_id = point.series_id;
 
         // Check series count limit before creating new buffer
-        let is_new_series = !self.buffers.contains_key(&series_id);
-        if is_new_series && self.buffers.len() >= self.config.max_series_count {
-            return Err(IngestionError::ValidationError(format!(
-                "Maximum series count {} exceeded",
-                self.config.max_series_count
-            )));
+        // Use len() check first to avoid unnecessary contains_key lookup
+        let current_series_count = self.buffers.len();
+        if current_series_count >= self.config.max_series_count {
+            // Only check if it's a new series if we're at the limit
+            let is_new_series = !self.buffers.contains_key(&series_id);
+            if is_new_series {
+                return Err(IngestionError::ValidationError(format!(
+                    "Maximum series count {} exceeded",
+                    self.config.max_series_count
+                )));
+            }
         }
 
         // Get or create buffer for this series
@@ -295,10 +311,15 @@ impl WriteBufferManager {
         // Use validated add to check timestamp and value
         let overwrite = buffer.add_validated(point.timestamp, point.value)?;
 
-        // Update counters
+        // Update counters with overflow protection
         if !overwrite {
             self.total_buffered.fetch_add(1, Ordering::Relaxed);
-            self.memory_used.fetch_add(16, Ordering::Relaxed);
+            // Use fetch_update with saturating_add to prevent overflow
+            let _ =
+                self.memory_used
+                    .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                        Some(current.saturating_add(16))
+                    });
         } else {
             self.metrics.record_overwrite();
         }
@@ -374,13 +395,23 @@ impl WriteBufferManager {
     /// Forces all buffered data to be sent to the writer.
     /// Called during shutdown to ensure no data is lost.
     pub async fn flush_all(&self) -> Result<(), IngestionError> {
-        let series_ids: Vec<SeriesId> = self.buffers.iter().map(|e| *e.key()).collect();
+        // Collect all series IDs that have data to flush
+        // Note: We must collect IDs first because flush_series drains but doesn't
+        // remove the entry from buffers, which would cause an infinite loop if we
+        // iterated in-place.
+        let series_ids: Vec<SeriesId> = self
+            .buffers
+            .iter()
+            .filter(|entry| !entry.value().is_empty())
+            .map(|entry| *entry.key())
+            .collect();
 
+        let count = series_ids.len();
         for series_id in series_ids {
             self.flush_series(series_id).await?;
         }
 
-        debug!("Flushed all {} series buffers", self.buffers.len());
+        debug!("Flushed all {} series buffers", count);
         Ok(())
     }
 
