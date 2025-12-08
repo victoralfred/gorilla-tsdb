@@ -353,27 +353,46 @@ impl BackpressureController {
 
         // Memory warning - use u128 to prevent overflow in percentage calculation
         if memory >= memory_warning_threshold {
-            if !self.memory_warning_logged.swap(true, Ordering::Relaxed) {
-                let percent = ((memory as u128) * 100 / (self.config.memory_limit as u128)) as u8;
-                warn!(
-                    "Memory usage high: {} bytes ({}% of limit)",
-                    memory, percent
-                );
+            let last_warning = self.last_memory_warning_nanos.load(Ordering::Relaxed);
+            // Log if never logged (0) or cooldown has passed
+            if last_warning == 0 || now_nanos.saturating_sub(last_warning) >= cooldown_nanos {
+                // Try to update the timestamp (only one thread will succeed)
+                if self
+                    .last_memory_warning_nanos
+                    .compare_exchange(last_warning, now_nanos, Ordering::SeqCst, Ordering::Relaxed)
+                    .is_ok()
+                {
+                    let percent =
+                        ((memory as u128) * 100 / (self.config.memory_limit as u128)) as u8;
+                    warn!(
+                        "Memory usage high: {} bytes ({}% of limit)",
+                        memory, percent
+                    );
+                }
             }
         } else {
+            // Reset when below threshold so next crossing will log
             self.last_memory_warning_nanos.store(0, Ordering::Relaxed);
         }
 
         // Queue warning - use u128 to prevent overflow in percentage calculation
         if queue >= queue_warning_threshold {
-            if !self.queue_warning_logged.swap(true, Ordering::Relaxed) {
-                let percent = ((queue as u128) * 100 / (self.config.queue_limit as u128)) as u8;
-                warn!(
-                    "Queue depth high: {} ({}% of limit)",
-                    queue, percent
-                );
+            let last_warning = self.last_queue_warning_nanos.load(Ordering::Relaxed);
+            // Log if never logged (0) or cooldown has passed
+            if last_warning == 0 || now_nanos.saturating_sub(last_warning) >= cooldown_nanos {
+                // Try to update the timestamp (only one thread will succeed)
+                if self
+                    .last_queue_warning_nanos
+                    .compare_exchange(last_warning, now_nanos, Ordering::SeqCst, Ordering::Relaxed)
+                    .is_ok()
+                {
+                    let percent =
+                        ((queue as u128) * 100 / (self.config.queue_limit as u128)) as u8;
+                    warn!("Queue depth high: {} ({}% of limit)", queue, percent);
+                }
             }
         } else {
+            // Reset when below threshold so next crossing will log
             self.last_queue_warning_nanos.store(0, Ordering::Relaxed);
         }
     }
